@@ -2,6 +2,7 @@ import os
 import re
 import json
 import tqdm
+import multiprocessing
 
 import math
 import scipy.sparse
@@ -15,17 +16,56 @@ import pytesseract
 from typing import List, Tuple
 
 
-def ocr_extraction(dir_image: str, conf_treshold: float = 10) -> pd.DataFrame:
+def ocr_extraction(
+    dir_image: str,
+    dir_save: str,
+    conf_treshold: float = 10,
+    target_shape: Tuple[int] = None
+) -> None:
+    """extract text from the given image and save as csv file,
+       with columns ['left', 'top', 'width', 'height', 'text']
 
+    Parameters
+    ----------
+    dir_image : str
+        directory of the image
+    dir_save : str
+        save path
+    conf_treshold : float, optional
+        conference treshold to discard irrelevant results, by default 10
+    target_shape: Tuple, optional
+        shape of the reshaped image, reshape will be applied if not None, by default None
+
+    Returns
+    -------
+    img_shape: Tuple[int]
+        image shape    
+
+    """
     image_orig = plt.imread(dir_image, format='jpeg')
-    information_dataframe = pytesseract.image_to_data(
+    img_shape = image_orig.shape
+    information_dataframe: pd.DataFrame = pytesseract.image_to_data(
         image_orig, output_type=pytesseract.Output.DATAFRAME)
     information_dataframe = information_dataframe[information_dataframe['conf'] > conf_treshold]
     information_dataframe = information_dataframe[[
         'left', 'top', 'width', 'height', 'text']]
+    information_dataframe = information_dataframe[~(
+        information_dataframe['text'].isnull())]
+    information_dataframe['text'] = information_dataframe['text'].astype(str).str.upper()
+    # ' " should be discard to avoid mismatch in latter steps
+    information_dataframe['text'] = information_dataframe['text'].astype(str).str.replace('\'', ' ')
+    information_dataframe['text'] = information_dataframe['text'].astype(str).str.replace('\"', ' ')
+    
+    if target_shape is not None:
+        for _, row in information_dataframe.iterrows():
+            row['left'] = int((row['left'] / img_shape[0]) * target_shape[0])
+            row['width'] = int((row['width'] / img_shape[0]) * target_shape[0])
+            row['top'] = int((row['top'] / img_shape[1]) * target_shape[1])
+            row['height'] = int(
+                (row['height'] / img_shape[1]) * target_shape[1])
 
-    return information_dataframe
-    pass
+    information_dataframe.to_csv(dir_save)
+    return img_shape
 
 
 def cosine_simularity(a: scipy.sparse.csr_matrix, b: scipy.sparse.csr_matrix) -> float:
@@ -140,7 +180,7 @@ def ground_truth_extraction(
                 1: inside pre-defined word-box 
                 2: inside other box
     """
-    with open(dir_bbox, 'r') as bbox_f:
+    with open(dir_bbox, 'r', encoding='utf-8') as bbox_f:
         lines = bbox_f.readlines()
         gt_dataframe = pd.DataFrame(
             columns=['left', 'top', 'right', 'bot', 'text', 'data_class', 'pos_neg'])
@@ -150,17 +190,26 @@ def ground_truth_extraction(
             top_coor = int(gt_all_info[1])
             right_coor = int(gt_all_info[4])
             bot_coor = int(gt_all_info[5])
-            text = gt_all_info[-1]
-            gt_dataframe = dataframe_append(
-                gt_dataframe,
-                left_coor,
-                top_coor,
-                right_coor,
-                bot_coor,
-                text
-            )
+            text = gt_all_info[-1].replace('\n', '')
+            # pytesseract only performs word level recognition
+            # thus textlines in gt labels should be split into words
+            text_words = text.split(' ')
+            total_length = len(text)
+            char_length = (right_coor - left_coor) / total_length
+            edge_ptr = left_coor
+            for text_word in text_words:
+                word_length = len(text_word)
+                gt_dataframe = dataframe_append(
+                    gt_dataframe,
+                    edge_ptr,
+                    top_coor,
+                    int(edge_ptr + word_length * char_length),
+                    bot_coor,
+                    text_word
+                )
+                edge_ptr += int((word_length + 1) * char_length)
 
-    with open(dir_key, 'r') as key_f:
+    with open(dir_key, 'r', encoding='utf-8') as key_f:
         key_info = json.load(key_f)
         for data_class in data_classes:
             if data_class not in key_info.keys():
@@ -292,9 +341,15 @@ def generate_label(
 
 
 def train_data_preprocessing_pipeline(
-    data_classes: List[str],
-    dir_train_root: str,
-    dir_processed: str,
+    dir_train_img: str,
+    dir_train_bbox: str,
+    dir_train_key: str,
+    dir_ocr_result: str,
+    dir_pos_neg: str,
+    dir_class: str,
+    file_list: List,
+    data_classes: Tuple[int],
+    ocr_conf_treshold: float = 10,
     cosine_sim_treshold: float = 0.4,
     target_shape: Tuple[int] = None
 ) -> None:
@@ -302,41 +357,45 @@ def train_data_preprocessing_pipeline(
 
     Parameters
     ----------
-    data_classes : List[str]
-        list of data classes
-    dir_train_root : str
-        root of train data
-    dir_processed : str
-        root of labels
+    dir_train_img : str
+        directory of train image
+    dir_train_bbox : str
+        directory of ground-turth bbox csv files
+    dir_train_key : str
+        directory of key information json files
+    dir_ocr_result : str
+        directory of image ocr result
+    dir_pos_neg : str
+        directory of pos_neg labels
+    dir_class : str
+        directory of classs labels
+    file_list : List
+        list of files to be processed
+    num_classes : int, optional
+        number of key information classes, including background, by default 5
+    ocr_conf_treshold : float, optional
+        ocr conference treshold that discard low confidence ocr result, by default 10
     cosine_sim_treshold : float, optional
-        cosine simularity treshold used in retrieval, by default 0.4
+        cosine simularity treshold for key information retrieval in bbox labels, by default 0.4
     target_shape : Tuple[int], optional
-        shape of the reshaped image, reshape will be applied if not None, by default None
+        target shape of resized image, reshape will be applied to the original image if given, by default None
     """
     num_classes = len(data_classes) + 1
-
-    dir_train_img = os.path.join(dir_train_root, 'img')
-    dir_train_bbox = os.path.join(dir_train_root, 'box')
-    dir_train_key = os.path.join(dir_train_root, 'key')
-
-    dir_pos_neg = os.path.join(dir_processed, 'pos_neg')
-    if not os.path.exists(dir_pos_neg):
-        os.mkdir(dir_pos_neg)
-    dir_class = os.path.join(dir_processed, 'class')
-    if not os.path.exists(dir_class):
-        os.mkdir(dir_class)
-
-    train_list = [f for f in os.listdir(dir_train_img)]
-    print("preprocessing dataset")
-    for file in tqdm.tqdm(train_list):
+    for file in tqdm.tqdm(file_list):
         dir_image = os.path.join(dir_train_img, file)
         dir_bbox = os.path.join(dir_train_bbox, file.replace('jpg', 'csv'))
         dir_key = os.path.join(dir_train_key, file.replace('jpg', 'json'))
+        dir_ocr_result_ = os.path.join(
+            dir_ocr_result, file.replace('jpg', 'csv'))
         dir_pos_neg_ = os.path.join(dir_pos_neg, file.replace('jpg', 'npy'))
         dir_class_ = os.path.join(dir_class, file.replace('jpg', 'npy'))
 
-        img = plt.imread(dir_image)
-        img_shape = img.shape[0:2]
+        img_shape = ocr_extraction(
+            dir_image=dir_image,
+            dir_save=dir_ocr_result_,
+            conf_treshold=ocr_conf_treshold,
+            target_shape=target_shape
+        )
 
         gt_dataframe = ground_truth_extraction(
             dir_bbox=dir_bbox,
@@ -355,15 +414,162 @@ def train_data_preprocessing_pipeline(
         np.save(dir_class_, class_label)
 
 
+def train_parser(
+    data_classes: List[str],
+    dir_train_root: str,
+    dir_processed: str,
+    ocr_conf_treshold: float = 10,
+    cosine_sim_treshold: float = 0.4,
+    target_shape: Tuple[int] = None
+):
+    """pipeline for extracting ground-truth information 
+       and generate labels in ViBERTgrid's format
+
+    Parameters
+    ----------
+    data_classes : List[str]
+        list of data classes
+    dir_train_root : str
+        root of train data
+    dir_processed : str
+        root of labels
+    ocr_conf_treshold: float
+        conference treshold to discard irrelevant results, by default 10
+    cosine_sim_treshold : float, optional
+        cosine simularity treshold used in retrieval, by default 0.4
+    target_shape : Tuple[int], optional
+        shape of the reshaped image, reshape will be applied if not None, by default None
+    """
+    dir_train_img = os.path.join(dir_train_root, 'img')
+    dir_train_bbox = os.path.join(dir_train_root, 'box')
+    dir_train_key = os.path.join(dir_train_root, 'key')
+
+    dir_ocr_result = os.path.join(dir_processed, 'ocr_result')
+    if not os.path.exists(dir_ocr_result):
+        os.mkdir(dir_ocr_result)
+    dir_pos_neg = os.path.join(dir_processed, 'pos_neg')
+    if not os.path.exists(dir_pos_neg):
+        os.mkdir(dir_pos_neg)
+    dir_class = os.path.join(dir_processed, 'class')
+    if not os.path.exists(dir_class):
+        os.mkdir(dir_class)
+
+    print("preprocessing train dataset")
+
+    train_list = [f for f in os.listdir(dir_train_img)]
+    train_data_preprocessing_pipeline(
+        dir_train_img=dir_train_img,
+        dir_train_bbox=dir_train_bbox,
+        dir_train_key=dir_train_key,
+        dir_ocr_result=dir_ocr_result,
+        dir_pos_neg=dir_pos_neg,
+        dir_class=dir_class,
+        file_list=train_list,
+        data_classes=data_classes,
+        ocr_conf_treshold=ocr_conf_treshold,
+        cosine_sim_treshold=cosine_sim_treshold,
+        target_shape=target_shape
+    )
+
+    print("process finished")
+
+
+def train_parser_multiprocessing(
+    data_classes: List[str],
+    dir_train_root: str,
+    dir_processed: str,
+    ocr_conf_treshold: float = 10,
+    cosine_sim_treshold: float = 0.4,
+    target_shape: Tuple[int] = None
+):
+    """a multiprocessing pipeline for extracting ground-truth information 
+       and generate labels in ViBERTgrid's format
+       METHOD NOT RECOMMENDED
+
+    Parameters
+    ----------
+    data_classes : List[str]
+        list of data classes
+    dir_train_root : str
+        root of train data
+    dir_processed : str
+        root of labels
+    ocr_conf_treshold: float
+        conference treshold to discard irrelevant results, by default 10
+    cosine_sim_treshold : float, optional
+        cosine simularity treshold used in retrieval, by default 0.4
+    target_shape : Tuple[int], optional
+        shape of the reshaped image, reshape will be applied if not None, by default None
+    """
+    dir_train_img = os.path.join(dir_train_root, 'img')
+    dir_train_bbox = os.path.join(dir_train_root, 'box')
+    dir_train_key = os.path.join(dir_train_root, 'key')
+
+    dir_ocr_result = os.path.join(dir_processed, 'ocr_result')
+    if not os.path.exists(dir_ocr_result):
+        os.mkdir(dir_ocr_result)
+    dir_pos_neg = os.path.join(dir_processed, 'pos_neg')
+    if not os.path.exists(dir_pos_neg):
+        os.mkdir(dir_pos_neg)
+    dir_class = os.path.join(dir_processed, 'class')
+    if not os.path.exists(dir_class):
+        os.mkdir(dir_class)
+
+    train_list = [f for f in os.listdir(dir_train_img)]
+
+    num_worker = os.cpu_count() // 2
+    step_length = len(train_list) // num_worker
+    processes = []
+    start = 0
+
+    print("preprocessing dataset")
+
+    for i in range(num_worker):
+        end = (i + 1) * step_length
+        curr_data_list = train_list[start: end] if end < len(
+            train_list) else train_list[start:]
+        if len(curr_data_list) > 0:
+            process = multiprocessing.Process(
+                target=train_data_preprocessing_pipeline,
+                args=(
+                    dir_train_img,
+                    dir_train_bbox,
+                    dir_train_key,
+                    dir_ocr_result,
+                    dir_pos_neg,
+                    dir_class,
+                    curr_data_list,
+                    data_classes,
+                    ocr_conf_treshold,
+                    cosine_sim_treshold,
+                    target_shape
+                )
+            )
+            processes.append(process)
+
+    for process in processes:
+        process: multiprocessing.Process
+        process.start()
+        print("process {} started".format(process.pid))
+
+    for process in processes:
+        process: multiprocessing.Process
+        process.join()
+        print('process {} finished'.format(process.pid))
+
+    print('data preprocessing finished')
+
+
 if __name__ == '__main__':
     target_shape = (336, 256)
     data_classes = ['company', 'date', 'address', 'total']
     pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     dir_train_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\train_raw'
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format'
+    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
 
-    train_data_preprocessing_pipeline(
+    train_parser(
         data_classes=data_classes,
         dir_train_root=dir_train_root,
         dir_processed=dir_processed,
-        target_shape=target_shape)
+        target_shape=target_shape
+    )
