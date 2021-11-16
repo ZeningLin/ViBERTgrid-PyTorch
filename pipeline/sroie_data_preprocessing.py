@@ -15,6 +15,8 @@ import pytesseract
 
 from typing import List, Tuple
 
+LOG_DIR = './log.txt'
+
 
 def ocr_extraction(
     dir_image: str,
@@ -39,7 +41,7 @@ def ocr_extraction(
     Returns
     -------
     img_shape: Tuple[int]
-        image shape    
+        image shape
 
     """
     image_orig = plt.imread(dir_image, format='jpeg')
@@ -51,11 +53,14 @@ def ocr_extraction(
         'left', 'top', 'width', 'height', 'text']]
     information_dataframe = information_dataframe[~(
         information_dataframe['text'].isnull())]
-    information_dataframe['text'] = information_dataframe['text'].astype(str).str.upper()
-    # ' " should be discard to avoid mismatch in latter steps
-    information_dataframe['text'] = information_dataframe['text'].astype(str).str.replace('\'', ' ')
-    information_dataframe['text'] = information_dataframe['text'].astype(str).str.replace('\"', ' ')
-    
+    information_dataframe['text'] = information_dataframe['text'].astype(
+        str).str.upper()
+
+    with open(LOG_DIR, 'w', encoding='utf-8') as err_file:
+        if(len(information_dataframe) == 0):
+            err_file.write(
+                'ocr cannot find any string in this image, please check or reduce conf_treshold: {}'.format(dir_image))
+
     if target_shape is not None:
         for _, row in information_dataframe.iterrows():
             row['left'] = int((row['left'] / img_shape[0]) * target_shape[0])
@@ -113,7 +118,7 @@ def dataframe_append(
     ----------
     key_dataframe: pandas.DataFrame
         dataframe that will be appended to
-    left: int, top: int, right: int, bot: int, 
+    left: int, top: int, right: int, bot: int,
         coor of bbox
     text: str
         text content inside bbox
@@ -151,9 +156,9 @@ def ground_truth_extraction(
     ----------
     dir_bbox: str
         directory to the bbox csv file
-    dir_key: str, 
+    dir_key: str,
         directory to the key info json file
-    data_classes: List, 
+    data_classes: List,
         list of names of data classes
     cosine_sim_treshold: float = 0.4
         retrieval of key information uses cosine simularity
@@ -165,19 +170,19 @@ def ground_truth_extraction(
         dataframe that contains the following information
         - coordinates 'left', 'top', 'right', 'bot'
         - text
-        - data_class 
+        - data_class
         - pos_neg
 
-        where:    
+        where:
             data_class_value
-                0:bkg 
-                1:company 
-                2:date 
-                3:address 
+                0:bkg
+                1:company
+                2:date
+                3:address
                 4:total
-            pos_neg_value 
-                0: not inside word-box 
-                1: inside pre-defined word-box 
+            pos_neg_value
+                0: not inside word-box
+                1: inside pre-defined word-box
                 2: inside other box
     """
     with open(dir_bbox, 'r', encoding='utf-8') as bbox_f:
@@ -422,7 +427,7 @@ def train_parser(
     cosine_sim_treshold: float = 0.4,
     target_shape: Tuple[int] = None
 ):
-    """pipeline for extracting ground-truth information 
+    """pipeline for extracting ground-truth information
        and generate labels in ViBERTgrid's format
 
     Parameters
@@ -482,7 +487,7 @@ def train_parser_multiprocessing(
     cosine_sim_treshold: float = 0.4,
     target_shape: Tuple[int] = None
 ):
-    """a multiprocessing pipeline for extracting ground-truth information 
+    """a multiprocessing pipeline for extracting ground-truth information
        and generate labels in ViBERTgrid's format
        METHOD NOT RECOMMENDED
 
@@ -561,7 +566,7 @@ def train_parser_multiprocessing(
 
 
 if __name__ == '__main__':
-    target_shape = (336, 256)
+    RESIZE_SHAPE = (336, 256)
     data_classes = ['company', 'date', 'address', 'total']
     pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     dir_train_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\train_raw'
@@ -571,5 +576,5 @@ if __name__ == '__main__':
         data_classes=data_classes,
         dir_train_root=dir_train_root,
         dir_processed=dir_processed,
-        target_shape=target_shape
+        target_shape=RESIZE_SHAPE
     )
