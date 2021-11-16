@@ -13,7 +13,7 @@ from torch.utils.data import Dataset, DataLoader, random_split
 from transformers import BertTokenizer
 
 
-resize_shape = (336, 256)
+RESIZE_SHAPE = (336, 256)
 
 
 class SROIEDataset(Dataset):
@@ -31,10 +31,11 @@ class SROIEDataset(Dataset):
         self.root = root
         self.train = train
         self.tokenizer = tokenizer
+        # self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', add_special_tokens = True)
         self.max_length = 0
         self.transform_img = torchvision.transforms.Compose([
             torchvision.transforms.Resize(
-                resize_shape,
+                RESIZE_SHAPE,
                 interpolation=torchvision.transforms.InterpolationMode.NEAREST
             ),
             torchvision.transforms.ToTensor()
@@ -53,10 +54,6 @@ class SROIEDataset(Dataset):
     def __getitem__(self, index):
         if self.train:
             return_ocr_result = self.ocr_result_list[index]
-            # len_curr_result = len(return_ocr_result)
-            # padding
-            # return_ocr_result += ['0', '0', '0', '0',
-            #                       '[PAD]'] * (self.max_length - len_curr_result)
             ocr_coor = []
             ocr_text = []
             for item in return_ocr_result:
@@ -64,19 +61,24 @@ class SROIEDataset(Dataset):
                 curr_text = item[4:]
                 curr_text = ''.join(curr_text)
                 ocr_text.append(curr_text)
-            ocr_coor = torch.tensor(ocr_coor)
 
-            ocr_text = ' '.join(ocr_text)
-            ocr_tokens = self.tokenizer.tokenize(ocr_text)
-            ocr_tokens = ['[CLS]'] + ocr_tokens
+            ocr_coor_expand = []
+            ocr_tokens = []
+            for text, coor in zip(ocr_text, ocr_coor):
+                if text == '':
+                    continue
+                curr_tokens = self.tokenizer.tokenize(text)
+                for i in range(len(curr_tokens)):
+                    ocr_coor_expand.append(coor)
+                    ocr_tokens.append(curr_tokens[i])
+
             ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
-            ocr_corpus = torch.tensor(ocr_corpus)
 
             return (self.transform_img(self.img_list[index]),
                     torch.tensor(self.class_list[index]),
                     torch.tensor(self.pos_neg_list[index]),
-                    ocr_coor,
-                    ocr_corpus)
+                    torch.tensor(ocr_coor_expand, dtype=torch.long),
+                    torch.tensor(ocr_corpus, dtype=torch.long))
 
     # @pysnooper.snoop()
     def _ViBERTgrid_coll_func(self, samples):
@@ -99,7 +101,12 @@ class SROIEDataset(Dataset):
         mask = torch.zeros(ocr_corpus.shape, dtype=torch.long)
         mask = mask.masked_fill_((ocr_corpus != 0), 1)
 
-        return imgs, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+        return (torch.stack(imgs, dim=0),
+                torch.stack(class_labels, dim=0),
+                torch.stack(pos_neg_labels, dim=0),
+                ocr_coors,
+                ocr_corpus,
+                mask)
 
     def _extract_train(self, root: str):
         dir_img = os.path.join(root, 'img')
@@ -186,7 +193,7 @@ def load_train_dataset(
 
 if __name__ == '__main__':
     dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
-    model_version = 'bert-base-cased'
+    model_version = 'bert-base-uncased'
     print('loading bert pretrained')
     tokenizer = BertTokenizer.from_pretrained(model_version)
     train_loader, val_loader = load_train_dataset(
