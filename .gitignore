@@ -1,5 +1,12 @@
 */__pycache__
+
+.vscode/
+.idea/
+temp/
+
 runs/
 weights/
-data/
-.vscode/
+
+*/train_processed/
+*/train_raw/
+*/train_raw_scripttest/
