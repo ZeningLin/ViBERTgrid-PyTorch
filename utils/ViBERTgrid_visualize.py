@@ -7,7 +7,7 @@ def ViBERTgrid_visualize(ViBERTgrid: torch.Tensor) -> None:
     num_pic = ViBERTgrid.shape[0]
     width = int(math.sqrt(num_pic))
     height = int(num_pic / width)
-    grid_convert = torch.mean(ViBERTgrid, dim=1)
+    grid_convert = torch.mean(ViBERTgrid, dim=1) * 255
 
     plt.figure()
     for w in range(width):
