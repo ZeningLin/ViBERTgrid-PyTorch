@@ -56,8 +56,9 @@ class SROIEDataset(Dataset):
             ocr_text = []
             for item in return_ocr_result:
                 curr_text = item[4:]
-                # avoid " ' in ocr recognition results affect list splitting
+                # avoid " ' , in ocr recognition results affect list splitting
                 curr_text = ''.join(curr_text)
+                curr_text.replace('\"', '')
                 if curr_text == '':
                     continue        # discard empty results
                 ocr_coor.append(list(map(int, item[:4])))
@@ -148,7 +149,7 @@ class SROIEDataset(Dataset):
                     print('\nempty result found in data extraction, please check')
                     print(file.replace('.jpg', 'csv'))
                 # ---------------------------------------------------------
-                ocr_result_list.append([data_line.strip().split(',')[
+                ocr_result_list.append([data_line[:-2].strip().split(',')[
                     1:] for data_line in data_lines])
 
         return img_list, np.array(class_list), np.array(pos_neg_list), ocr_result_list

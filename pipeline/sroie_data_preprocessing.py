@@ -24,7 +24,13 @@ def ocr_extraction(
     conf_treshold: float = 10,
     target_shape: Tuple[int] = None
 ) -> None:
-    """extract text from the given image and save as csv file,
+    """@DEPRECATED method 
+       @Updated on 19/11/2021 by Zening  
+        Tesseract gives poor performance on SROIE, I will use 
+        ground-truth OCR labels instead
+
+    @OLD VERSION   
+       extract text from the given image and save as csv file,
        with columns ['left', 'top', 'width', 'height', 'text']
 
     Parameters
@@ -145,15 +151,20 @@ def dataframe_append(
 
 
 def ground_truth_extraction(
+    dir_img: str,
     dir_bbox: str,
     dir_key: str,
     data_classes: List,
-    cosine_sim_treshold: float = 0.4
-) -> pd.DataFrame:
+    cosine_sim_treshold: float = 0.4,
+    spilt_word: bool = False,
+    target_shape: Tuple[int] = None
+) -> Tuple[pd.DataFrame, Tuple[int]]:
     """extract ground truth information of the SROIE dataset
 
     Parameters
     ----------
+    dir_img: str
+        directory to the image file
     dir_bbox: str
         directory to the bbox csv file
     dir_key: str,
@@ -163,6 +174,8 @@ def ground_truth_extraction(
     cosine_sim_treshold: float = 0.4
         retrieval of key information uses cosine simularity
         this treshold controls the matching rate
+    spilt_word: bool, optional
+        spilt gt labels into word-level, by default true
 
     Returns
     ------
@@ -184,7 +197,12 @@ def ground_truth_extraction(
                 0: not inside word-box
                 1: inside pre-defined word-box
                 2: inside other box
+    image_shape: Tuple[int]
+        image shape
     """
+    image = plt.imread(dir_img)
+    image_shape = image.shape
+
     with open(dir_bbox, 'r', encoding='utf-8') as bbox_f:
         lines = bbox_f.readlines()
         gt_dataframe = pd.DataFrame(
@@ -195,24 +213,63 @@ def ground_truth_extraction(
             top_coor = int(gt_all_info[1])
             right_coor = int(gt_all_info[4])
             bot_coor = int(gt_all_info[5])
-            text = gt_all_info[-1].replace('\n', '')
-            # pytesseract only performs word level recognition
-            # thus textlines in gt labels should be split into words
-            text_words = text.split(' ')
-            total_length = len(text)
-            char_length = (right_coor - left_coor) / total_length
-            edge_ptr = left_coor
-            for text_word in text_words:
-                word_length = len(text_word)
+            text = gt_all_info[8:]
+            text = ''.join(text)
+            text = text.replace('\n', '')
+
+            if spilt_word:
+                # spilt text lines into word level
+                text_words = text.split(' ')
+                total_length = len(text)
+                char_length = (right_coor - left_coor) / total_length
+                edge_ptr = left_coor
+                for text_word in text_words:
+                    word_length = len(text_word)
+                    
+                    left_coor_ = edge_ptr
+                    top_coor_ = top_coor
+                    right_coor_ = int(edge_ptr + word_length * char_length)
+                    bot_coor_ = bot_coor
+                    
+                    if target_shape is not None:
+                        left_coor_ = int(
+                            (left_coor_ / image_shape[1]) * target_shape[1])
+                        top_coor_ = int(
+                            (top_coor_ / image_shape[0]) * target_shape[0])
+                        right_coor_ = int(
+                            (right_coor_ / image_shape[1]) * target_shape[1])
+                        bot_coor_ = int(
+                            (bot_coor_ / image_shape[0]) * target_shape[0])
+                        
+                    gt_dataframe = dataframe_append(
+                        gt_dataframe,
+                        left_coor_,
+                        top_coor_,
+                        right_coor_,
+                        bot_coor_,
+                        text_word
+                    )
+                    
+                    edge_ptr += int((word_length + 1) * char_length)
+            else:
+                if target_shape is not None:
+                    left_coor = int(
+                        (left_coor / image_shape[1]) * target_shape[1])
+                    top_coor = int(
+                        (top_coor / image_shape[0]) * target_shape[0])
+                    right_coor = int(
+                        (right_coor / image_shape[1]) * target_shape[1])
+                    bot_coor = int(
+                        (bot_coor / image_shape[0]) * target_shape[0])
+                    
                 gt_dataframe = dataframe_append(
                     gt_dataframe,
-                    edge_ptr,
+                    left_coor,
                     top_coor,
-                    int(edge_ptr + word_length * char_length),
+                    right_coor,
                     bot_coor,
-                    text_word
+                    text
                 )
-                edge_ptr += int((word_length + 1) * char_length)
 
     with open(dir_key, 'r', encoding='utf-8') as key_f:
         key_info = json.load(key_f)
@@ -285,7 +342,7 @@ def ground_truth_extraction(
                     gt_dataframe.loc[index, 'data_class'] = 4
                     gt_dataframe.loc[index, 'pos_neg'] = 1
 
-    return gt_dataframe
+    return gt_dataframe, image_shape
 
 
 def generate_label(
@@ -332,11 +389,11 @@ def generate_label(
         pos_neg = row['pos_neg']
         data_class = row['data_class']
 
-        if(target_shape is not None):
-            left_coor = int((left_coor / img_shape[0]) * target_shape[0])
-            right_coor = int((right_coor / img_shape[0]) * target_shape[0])
-            top_coor = int((top_coor / img_shape[1]) * target_shape[1])
-            bot_coor = int((bot_coor / img_shape[1]) * target_shape[1])
+        # if(target_shape is not None):
+        #     left_coor = int((left_coor / img_shape[0]) * target_shape[0])
+        #     right_coor = int((right_coor / img_shape[0]) * target_shape[0])
+        #     top_coor = int((top_coor / img_shape[1]) * target_shape[1])
+        #     bot_coor = int((bot_coor / img_shape[1]) * target_shape[1])
 
         pos_neg_label[pos_neg, top_coor:bot_coor, left_coor:right_coor] = 1
         class_label[2 * data_class, top_coor:bot_coor,
@@ -354,8 +411,8 @@ def train_data_preprocessing_pipeline(
     dir_class: str,
     file_list: List,
     data_classes: Tuple[int],
-    ocr_conf_treshold: float = 10,
     cosine_sim_treshold: float = 0.4,
+    spilt_word: bool = True,
     target_shape: Tuple[int] = None
 ) -> None:
     """extract ground-truth information and generate labels in ViBERTgrid's format
@@ -378,10 +435,10 @@ def train_data_preprocessing_pipeline(
         list of files to be processed
     num_classes : int, optional
         number of key information classes, including background, by default 5
-    ocr_conf_treshold : float, optional
-        ocr conference treshold that discard low confidence ocr result, by default 10
     cosine_sim_treshold : float, optional
         cosine simularity treshold for key information retrieval in bbox labels, by default 0.4
+    spilt_word: bool, optional
+        spilt gt labels into word-level, by default true
     target_shape : Tuple[int], optional
         target shape of resized image, reshape will be applied to the original image if given, by default None
     """
@@ -395,18 +452,14 @@ def train_data_preprocessing_pipeline(
         dir_pos_neg_ = os.path.join(dir_pos_neg, file.replace('jpg', 'npy'))
         dir_class_ = os.path.join(dir_class, file.replace('jpg', 'npy'))
 
-        img_shape = ocr_extraction(
-            dir_image=dir_image,
-            dir_save=dir_ocr_result_,
-            conf_treshold=ocr_conf_treshold,
-            target_shape=target_shape
-        )
-
-        gt_dataframe = ground_truth_extraction(
+        gt_dataframe, img_shape = ground_truth_extraction(
+            dir_img=dir_image,
             dir_bbox=dir_bbox,
             dir_key=dir_key,
             data_classes=data_classes,
-            cosine_sim_treshold=cosine_sim_treshold
+            cosine_sim_treshold=cosine_sim_treshold,
+            spilt_word=spilt_word,
+            target_shape=target_shape
         )
         pos_neg_label, class_label = generate_label(
             gt_dataframe=gt_dataframe,
@@ -415,6 +468,7 @@ def train_data_preprocessing_pipeline(
             target_shape=target_shape
         )
 
+        gt_dataframe.to_csv(dir_ocr_result_)
         np.save(dir_pos_neg_, pos_neg_label)
         np.save(dir_class_, class_label)
 
@@ -423,7 +477,7 @@ def train_parser(
     data_classes: List[str],
     dir_train_root: str,
     dir_processed: str,
-    ocr_conf_treshold: float = 10,
+    spilt_word: bool = True,
     cosine_sim_treshold: float = 0.4,
     target_shape: Tuple[int] = None
 ):
@@ -438,8 +492,8 @@ def train_parser(
         root of train data
     dir_processed : str
         root of labels
-    ocr_conf_treshold: float
-        conference treshold to discard irrelevant results, by default 10
+    spilt_word: bool, optional
+        spilt gt labels into word-level, by default true
     cosine_sim_treshold : float, optional
         cosine simularity treshold used in retrieval, by default 0.4
     target_shape : Tuple[int], optional
@@ -471,7 +525,7 @@ def train_parser(
         dir_class=dir_class,
         file_list=train_list,
         data_classes=data_classes,
-        ocr_conf_treshold=ocr_conf_treshold,
+        spilt_word=spilt_word,
         cosine_sim_treshold=cosine_sim_treshold,
         target_shape=target_shape
     )
@@ -483,7 +537,7 @@ def train_parser_multiprocessing(
     data_classes: List[str],
     dir_train_root: str,
     dir_processed: str,
-    ocr_conf_treshold: float = 10,
+    spilt_word: bool = True,
     cosine_sim_treshold: float = 0.4,
     target_shape: Tuple[int] = None
 ):
@@ -499,8 +553,8 @@ def train_parser_multiprocessing(
         root of train data
     dir_processed : str
         root of labels
-    ocr_conf_treshold: float
-        conference treshold to discard irrelevant results, by default 10
+    spilt_word: bool, optional
+        spilt gt labels into word-level, by default true
     cosine_sim_treshold : float, optional
         cosine simularity treshold used in retrieval, by default 0.4
     target_shape : Tuple[int], optional
@@ -545,7 +599,7 @@ def train_parser_multiprocessing(
                     dir_class,
                     curr_data_list,
                     data_classes,
-                    ocr_conf_treshold,
+                    spilt_word,
                     cosine_sim_treshold,
                     target_shape
                 )
