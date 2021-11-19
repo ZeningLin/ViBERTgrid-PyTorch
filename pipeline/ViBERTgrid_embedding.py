@@ -7,13 +7,13 @@ from typing import Tuple, Optional, Callable
 def BERT_embedding(
     corpus: torch.Tensor,
     mask: torch.Tensor,
-    bert_model: Optional[Callable] = None,
+    bert_model: Callable = None,
     mode='train'
 ) -> torch.tensor:
 
     assert bert_model is not None, 'no bert model given'
     assert mode in [
-        'train', 'eval'], 'invalid mode \'value\', must be train or \'eval\''
+        'train', 'eval'], 'invalid mode \'{}\', must be \'train\' or \'eval\''.format(mode)
     model = bert_model
 
     if(mode == 'train'):
@@ -36,15 +36,15 @@ def BERT_embedding(
     # apply BERT embedding to all windows
     embeddings = []
     for count in range(win_count):
-        end_index = start_index + (count + 1) * 510
+        end_index = (count + 1) * 510
         curr_seq_len = 0
 
         # add [CLS] [SEP] [PAD] tokens
         if end_index > seq_len:
             # seq_len < 510, pad
-            curr_seq = corpus[start_index:]
-            curr_seq_len = len(curr_seq)
-            curr_mask = mask[start_index:]
+            curr_seq = corpus[:, start_index:]
+            curr_seq_len = curr_seq.shape[1]
+            curr_mask = mask[:, start_index:]
             pad_tokens = torch.zeros((corpus.shape[0], (end_index - seq_len)))
             # corpus: [['CLS'] + curr_sequence + ['SEP'] + ['PAD'] * pad_size]
             curr_seq = torch.cat(
@@ -53,9 +53,9 @@ def BERT_embedding(
             curr_mask = torch.cat(
                 [mask_valid, curr_mask, mask_valid, pad_tokens], dim=1)
         else:
-            curr_seq = corpus[start_index: end_index]
-            curr_mask = mask[start_index: end_index]
-            curr_seq_len = len(curr_seq)
+            curr_seq = corpus[:, start_index: end_index]
+            curr_mask = mask[:, start_index: end_index]
+            curr_seq_len = curr_seq.shape[1]
             # corpus: [['CLS'] + curr_sequence + ['SEP']]
             curr_seq = torch.cat([cls_token, curr_seq, sep_token], dim=1)
             # mask: [[1] + curr_sequence + [1]]
@@ -67,17 +67,17 @@ def BERT_embedding(
         # BERT embedding
         curr_output = model(input_ids=curr_seq, attention_mask=curr_mask)
         curr_output = curr_output.last_hidden_state
-        # remove special tokens
-        curr_output = curr_output[:, 1: (1 + curr_seq_len), :]
+
+        curr_output = curr_output[:, 1:(1+curr_seq_len), ]
 
         embeddings.append(curr_output)
 
         start_index = end_index
 
-    if(len(embeddings) == 1):
+    if(win_count == 1):
         return embeddings[0]
     else:
-        return torch.stack(embeddings, dim=1)
+        return torch.cat(embeddings, dim=1)
 
 
 def ViBERTgrid_embedding(
@@ -86,19 +86,19 @@ def ViBERTgrid_embedding(
     img_shape: Tuple,
     stride: int = 8
 ) -> torch.Tensor:
-    coors[:, :, 2] += coors[:, :, 0]
-    coors[:, :, 3] += coors[:, :, 1]
     bs, seq_len, num_dim = BERT_embeddings.shape
-    ViBERTgrid = torch.zeros((bs, num_dim, int(img_shape[0] / stride), int(img_shape[1] / stride)))
+    ViBERTgrid = torch.zeros(
+        (bs, num_dim, int(img_shape[0] / stride), int(img_shape[1] / stride)))
     for seq_index in range(seq_len):
         curr_coors = coors[:, seq_index, :] / stride
         curr_coors = curr_coors.int()
         curr_emb = BERT_embeddings[:, seq_index, :]
         for bs_index in range(bs):
-            ViBERTgrid[bs_index, :, 
+            ViBERTgrid[bs_index, :,
                        curr_coors[bs_index, 1]: curr_coors[bs_index, 3],
                        curr_coors[bs_index, 0]: curr_coors[bs_index, 2]] = \
-            curr_emb[bs_index, :, None, None]  # expand dimensions to match requirements
+                curr_emb[bs_index, :, None,
+                         None]  # expand dimensions to match requirements
 
     return ViBERTgrid
 
@@ -128,10 +128,10 @@ if __name__ == '__main__':
         num_workers=0,
         tokenizer=tokenizer
     )
-    img, class_label, pos_neg_label, coor, corpus, mask = next(
-        iter(train_loader))
 
-    BERTemb = BERT_embedding(corpus, mask, model)
-    ViBERTgrid = ViBERTgrid_embedding(BERTemb, coor, RESIZE_SHAPE, stride=8)
-    print(ViBERTgrid.shape)
-    ViBERTgrid_visualize(ViBERTgrid)
+    for img, class_label, pos_neg_label, coor, corpus, mask in train_loader:
+        BERTemb = BERT_embedding(corpus, mask, model)
+        ViBERTgrid = ViBERTgrid_embedding(
+            BERTemb, coor, RESIZE_SHAPE, stride=8)
+        print(ViBERTgrid.shape)
+        ViBERTgrid_visualize(ViBERTgrid)
