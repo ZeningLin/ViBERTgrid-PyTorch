@@ -42,10 +42,8 @@ class SROIEDataset(Dataset):
         ])
 
         if self.train:
-            self.img_list, \
-                self.class_list, \
-                self.pos_neg_list, \
-                self.ocr_result_list, = self._extract_train(self.root)
+            self.img_list, self.class_list, self.pos_neg_list, self.ocr_result_list = self._extract_train(
+                self.root)
 
     def __len__(self) -> int:
         return len(self.img_list)
@@ -57,9 +55,13 @@ class SROIEDataset(Dataset):
             ocr_coor = []
             ocr_text = []
             for item in return_ocr_result:
-                ocr_coor.append(list(map(int, item[:4])))
                 curr_text = item[4:]
+                # avoid " ' , in ocr recognition results affect list splitting
                 curr_text = ''.join(curr_text)
+                curr_text.replace('\"', '')
+                if curr_text == '':
+                    continue        # discard empty results
+                ocr_coor.append(list(map(int, item[:4])))
                 ocr_text.append(curr_text)
 
             ocr_coor_expand = []
@@ -140,8 +142,15 @@ class SROIEDataset(Dataset):
                 data_lines = csv_file.readlines()[1:]
                 self.max_length = len(data_lines) if (
                     len(data_lines) > self.max_length) else self.max_length
-                ocr_result_list.append([data_line.strip().split(',')[
-                                       1:] for data_line in data_lines])
+                # debug----------------------------------------------------
+                curr_ocr_result = [data_line.strip().split(',')[1:]
+                                   for data_line in data_lines]
+                if(len(curr_ocr_result) == 0):
+                    print('\nempty result found in data extraction, please check')
+                    print(file.replace('.jpg', 'csv'))
+                # ---------------------------------------------------------
+                ocr_result_list.append([data_line[:-2].strip().split(',')[
+                    1:] for data_line in data_lines])
 
         return img_list, np.array(class_list), np.array(pos_neg_list), ocr_result_list
 
@@ -204,5 +213,9 @@ if __name__ == '__main__':
         tokenizer=tokenizer
     )
 
-    train_batch = next(iter(train_loader))
-    print(train_batch)
+    for train_batch in tqdm(train_loader):
+        img, class_label, pos_neg, coor, corpus, mask = train_batch
+        for item in coor:
+            if len(item) == 0:
+                print('empty item found')
+                print(item)
