@@ -65,7 +65,7 @@ class BasicBlock(nn.Module):
 
         x_c = self.conv_shortcut(x)
 
-        return x_m + x_c
+        return self.relu_2(x_m + x_c)
 
 
 class ResNetFPN_ViBERTgrid(nn.Module):
