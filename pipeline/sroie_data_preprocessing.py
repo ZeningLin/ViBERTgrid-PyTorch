@@ -376,11 +376,11 @@ def generate_label(
         pos_neg_label = np.zeros(
             (3, target_shape[0], target_shape[1]), dtype=int)
         class_label = np.zeros(
-            (2 * num_class, target_shape[0], target_shape[1]), dtype=int)
+            (num_class, target_shape[0], target_shape[1]), dtype=int)
     else:
         pos_neg_label = np.zeros((3, img_shape[0], img_shape[1]), dtype=int)
         class_label = np.zeros(
-            (2 * num_class, img_shape[0], img_shape[1]), dtype=int)
+            (num_class, img_shape[0], img_shape[1]), dtype=int)
     for _, row in gt_dataframe.iterrows():
         left_coor = row['left']
         right_coor = row['right']
@@ -396,7 +396,7 @@ def generate_label(
         #     bot_coor = int((bot_coor / img_shape[1]) * target_shape[1])
 
         pos_neg_label[pos_neg, top_coor:bot_coor, left_coor:right_coor] = 1
-        class_label[2 * data_class, top_coor:bot_coor,
+        class_label[data_class, top_coor:bot_coor,
                     left_coor:right_coor] = 1
 
     return pos_neg_label, class_label
