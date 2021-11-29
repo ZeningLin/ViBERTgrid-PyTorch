@@ -8,7 +8,7 @@ def BERT_embedding(
     mask: torch.Tensor,
     bert_model: Callable = None,
     mode='train'
-) -> torch.tensor:
+) -> torch.Tensor:
     """apply BERT embedding to the given corpus 
      
     corpus and mask directly come from the SROIEDataset through DataLoader,   
@@ -27,7 +27,7 @@ def BERT_embedding(
 
     Returns
     -------
-    BERT_embeddings : torch.tensor
+    BERT_embeddings : torch.Tensor
         BERT embeddings of the corpus, same in shape with corpus
     """
 
@@ -41,6 +41,9 @@ def BERT_embedding(
     else:
         model.eval()
 
+    device = corpus.device
+    model = model.to(device)
+
     # if length of sequence exceeds 510 (BERT limitation), apply sliding windows
     batch_size = corpus.shape[0]
     seq_len = corpus.shape[1]
@@ -48,10 +51,10 @@ def BERT_embedding(
     start_index = 0
 
     # in huggingface, 101 -> [CLS], 102 -> [SEP], 0 -> [PAD]
-    cls_token = torch.tensor(batch_size * [101], dtype=torch.long).view(-1, 1)
-    sep_token = torch.tensor(batch_size * [102], dtype=torch.long).view(-1, 1)
+    cls_token = torch.tensor(batch_size * [101], dtype=torch.long, device=device).view(-1, 1)
+    sep_token = torch.tensor(batch_size * [102], dtype=torch.long, device=device).view(-1, 1)
     # mask tokens for CLS and SEP
-    mask_valid = torch.tensor(batch_size * [1], dtype=torch.long).view(-1, 1)
+    mask_valid = torch.tensor(batch_size * [1], dtype=torch.long, device=device).view(-1, 1)
 
     # apply BERT embedding to all windows
     embeddings = []
@@ -65,7 +68,7 @@ def BERT_embedding(
             curr_seq = corpus[:, start_index:]
             curr_seq_len = curr_seq.shape[1]
             curr_mask = mask[:, start_index:]
-            pad_tokens = torch.zeros((corpus.shape[0], (end_index - seq_len)))
+            pad_tokens = torch.zeros((corpus.shape[0], (end_index - seq_len)), device=device)
             # corpus: [['CLS'] + curr_sequence + ['SEP'] + ['PAD'] * pad_size]
             curr_seq = torch.cat(
                 [cls_token, curr_seq, sep_token, pad_tokens], dim=1)
@@ -140,20 +143,22 @@ def ViBERTgrid_embedding(
     assert mode in [
         'mean', 'first'], f"mode should be 'mean' or 'first', {mode} were given"
 
+    device = coors.device
     bs, seq_len, num_dim = BERT_embeddings.shape
 
     ViBERTgrid = torch.zeros(
-        (bs, num_dim, int(img_shape[0] / stride), int(img_shape[1] / stride)))
+        (bs, num_dim, int(img_shape[0] / stride), int(img_shape[1] / stride)), device=device)
 
     for bs_index in range(bs):
         # TODO  low efficiency implementation, may optimized later
         #       1. unable to vectorize due to the corpus length difference inside a batch
         
         # initialize coors with [-1, -1, -1, -1] to match first coor
-        prev_coors = torch.ones((coors.shape[2]), dtype=torch.long) * (-1)
+        prev_coors = torch.ones((coors.shape[2]), dtype=torch.long, device=device)
+        prev_coors *= -1
         if mode == 'mean':
             mean_count = 1
-            curr_embs = torch.zeros((num_dim), dtype=torch.float32)
+            curr_embs = torch.zeros((num_dim), dtype=torch.float32, device=device)
         for seq_index in range(seq_len):
             if mask[bs_index, seq_index] == 0:
                 break

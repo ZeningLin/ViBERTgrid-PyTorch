@@ -10,12 +10,14 @@ def semantic_segmentation(
     pos_neg_labels: torch.Tensor,
     class_labels: torch.Tensor
 ):
+    device = fuse_feature.device
     fuse_channel = fuse_feature.shape[1]
 
     aux_loss_1 = nn.CrossEntropyLoss()
     aux_loss_2 = nn.CrossEntropyLoss()
     semantic_segmentation_net = SemanticSegmentationNet(
         fuse_channel=fuse_channel)
+    semantic_segmentation_net = semantic_segmentation_net.to(device)
     x_out_1, x_out_2 = semantic_segmentation_net(fuse_feature)
 
     aux_loss_1_val = aux_loss_1(x_out_1, pos_neg_labels.argmax(dim=1))
@@ -29,6 +31,7 @@ if __name__ == '__main__':
     from transformers import BertTokenizer
     from tqdm import tqdm
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
     model_version = 'bert-base-uncased'
     print('loading bert pretrained')
@@ -45,8 +48,13 @@ if __name__ == '__main__':
     num_batch = len(train_loader)
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch
+        class_label = class_label.to(device)
+        pos_neg = pos_neg.to(device)
+        coor = coor.to(device)
+        corpus = corpus.to(device)
+        mask = mask.to(device)
         fuse = torch.zeros(class_label.shape[0], 256, int(
-            class_label.shape[2] / 4), int(class_label.shape[3] / 4))
+            class_label.shape[2] / 4), int(class_label.shape[3] / 4), device=device)
         loss = semantic_segmentation(
             fuse_feature=fuse,
             pos_neg_labels=pos_neg,

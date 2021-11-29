@@ -110,11 +110,11 @@ if __name__ == '__main__':
 
     """
 
-    input = torch.arange(60000, dtype=torch.float32).reshape(2, 3, 100, 100)
+    input = torch.arange(60000, dtype=torch.float32, device='cuda').reshape(2, 3, 100, 100)
     coords = torch.tensor([[[11.4, 12.3, 54.1, 54.1], [11.4, 12.3, 54.1, 54.1], [0, 0, 0, 0]],
                           [[24.1, 34.1, 56.7, 56.7], [34.1, 4.1, 56.7, 7.1], [24.1, 14.1, 33, 96.7]]],
-                          dtype=torch.float32)
-    mask = torch.tensor([[1, 1, 0], [1, 1, 1]])
+                          dtype=torch.float32, device='cuda')
+    mask = torch.tensor([[1, 1, 0], [1, 1, 1]], device='cuda')
     roi_output = grid_roi_align(input, coords, output_size=7, step=4)
 
     print(input.shape, '\n', mask.shape, '\n', coords.shape, '\n', roi_output.shape)

@@ -9,12 +9,16 @@ def late_fusion(
     ROI_output: torch.Tensor,
     BERT_embeddings: torch.Tensor,
 ) -> torch.Tensor:
+    
+    device = ROI_output.device
+    
     _, _, BERT_dimension = BERT_embeddings.shape
 
     ROI_embedding_net = ROIEmbedding(
         num_channels=ROI_output.shape[1],
         roi_shape=(ROI_output.shape[2], ROI_output.shape[3])
     )
+    ROI_embedding_net = ROI_embedding_net.to(device)
     # (bs*seq_len, C, ROI_H, ROI_W) -> (bs*seq_len, 1024)
     ROI_embeddings: torch.Tensor = ROI_embedding_net(ROI_output)
     # (bs*seq_len, 1024) + (bs, seq_len, BERT_dimension) -> (bs*seq_len)
@@ -26,6 +30,7 @@ def late_fusion(
         out_channels=1024,
         bias=True
     )
+    fuse_embedding_net = fuse_embedding_net.to(device)
 
     # (bs*seq_len, 1024)
     fuse_embeddings = fuse_embedding_net(fuse_embeddings)
@@ -39,6 +44,8 @@ def field_type_classification(
     mask: torch.Tensor,
     class_labels: torch.Tensor
 ):
+    device = coords.device
+    
     bs = coords.shape[0]
     seq_len = coords.shape[1]
     field_types = class_labels.shape[1]
@@ -51,6 +58,7 @@ def field_type_classification(
         out_channels=field_types,
         bias=True
     )
+    classification_net = classification_net.to(device)
 
     # (bs*seq_len, field_types)
     pred_class_orig = classification_net(
@@ -65,6 +73,10 @@ def field_type_classification(
         for seq_index in range(seq_len):
             if mask[bs_index, seq_index] == 1:
                 cur_coor = coords[bs_index, seq_index, :]
+                if cur_coor[1] == cur_coor[3]:
+                    cur_coor[3] += 1
+                if cur_coor[0] == cur_coor[2]:
+                    cur_coor[2] += 1
                 curr_label_class = class_labels[bs_index, :, cur_coor[1]:cur_coor[3],
                                                 cur_coor[0]:cur_coor[2]]
                 curr_label_class = curr_label_class.argmax(dim=0).reshape(-1)
@@ -74,8 +86,8 @@ def field_type_classification(
             else:
                 continue
 
-    label_class = torch.tensor(label_class)
-    pred_class = torch.cat(pred_class, dim=0)
+    label_class = torch.tensor(label_class).to(device)
+    pred_class = torch.cat(pred_class, dim=0).to(device)
     # TODO computing CELoss is time-comsuming
     classification_loss_val = classification_loss(pred_class, label_class)
     return classification_loss_val
@@ -89,6 +101,7 @@ if __name__ == '__main__':
     from transformers import BertTokenizer, BertModel
     from tqdm import tqdm
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
     RESIZE_SHAPE = (336, 256)
     dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
     model_version = 'bert-base-uncased'
@@ -107,9 +120,14 @@ if __name__ == '__main__':
     num_batch = len(train_loader)
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch
+        class_label = class_label.to(device)
+        pos_neg = pos_neg.to(device)
+        coor = coor.to(device)
+        corpus = corpus.to(device)
+        mask = mask.to(device)
         BERTemb = BERT_embedding(corpus, mask, bert_model)
         p_fuse = torch.zeros(class_label.shape[0], 256, int(
-            class_label.shape[2] / 4), int(class_label.shape[3] / 4))
+            class_label.shape[2] / 4), int(class_label.shape[3] / 4), device=device)
         roi_output = grid_roi_align(
             feature_map=p_fuse,
             coords=coor.float(),
