@@ -45,7 +45,8 @@ class ROIEmbedding(nn.Module):
 class SingleLayer(nn.Module):
     def __init__(self, in_channels, out_channels, bias: bool = True) -> None:
         super().__init__()
-        self.linear = nn.Linear(in_features=in_channels, out_features=out_channels, bias=bias)
+        self.linear = nn.Linear(in_features=in_channels,
+                                out_features=out_channels, bias=bias)
 
     def forward(self, x):
         return self.linear(x)

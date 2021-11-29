@@ -49,10 +49,11 @@ def grid_roi_align(
     if mask is None:
         for bs_index in range(coords.shape[0]):
             coords_list.append(coords[bs_index])
-    else: 
+    else:
         output_reshape = False
         for bs_index in range(coords.shape[0]):
-            valid_index = mask[bs_index].sum(dim=0).int() # get the length of valid corpus, discard paddings
+            # get the length of valid corpus, discard paddings
+            valid_index = mask[bs_index].sum(dim=0).int()
             coords_list.append(coords[bs_index, : valid_index])
 
     roi_output = torchvision.ops.roi_align(
@@ -110,11 +111,13 @@ if __name__ == '__main__':
 
     """
 
-    input = torch.arange(60000, dtype=torch.float32, device='cuda').reshape(2, 3, 100, 100)
+    input = torch.arange(60000, dtype=torch.float32,
+                         device='cuda').reshape(2, 3, 100, 100)
     coords = torch.tensor([[[11.4, 12.3, 54.1, 54.1], [11.4, 12.3, 54.1, 54.1], [0, 0, 0, 0]],
                           [[24.1, 34.1, 56.7, 56.7], [34.1, 4.1, 56.7, 7.1], [24.1, 14.1, 33, 96.7]]],
                           dtype=torch.float32, device='cuda')
     mask = torch.tensor([[1, 1, 0], [1, 1, 1]], device='cuda')
     roi_output = grid_roi_align(input, coords, output_size=7, step=4)
 
-    print(input.shape, '\n', mask.shape, '\n', coords.shape, '\n', roi_output.shape)
+    print(input.shape, '\n', mask.shape, '\n',
+          coords.shape, '\n', roi_output.shape)

@@ -9,9 +9,22 @@ def late_fusion(
     ROI_output: torch.Tensor,
     BERT_embeddings: torch.Tensor,
 ) -> torch.Tensor:
-    
+    """apply late fusion to ROIs and BERT embeddings
+
+    Parameters
+    ----------
+    ROI_output : torch.Tensor
+        ROIs obtained from grid_roi_align
+    BERT_embeddings : torch.Tensor
+        BERT embeddings obtained from ViBERTgrid_embedding.BERT_embedding()
+
+    Returns
+    -------
+    fuse_embeddings : torch.Tensor
+        fused features
+    """
     device = ROI_output.device
-    
+
     _, _, BERT_dimension = BERT_embeddings.shape
 
     ROI_embedding_net = ROIEmbedding(
@@ -43,9 +56,30 @@ def field_type_classification(
     coords: torch.Tensor,
     mask: torch.Tensor,
     class_labels: torch.Tensor
-):
+) -> torch.Tensor:
+    """a simplified version of field type classification,  
+       discard the original two-stage classification pipeline
+
+       apply classification to all ROIs seperately
+
+    Parameters
+    ----------
+    fuse_embeddings : torch.Tensor
+        late fusion results from late_fusion
+    coords : torch.Tensor
+        coords from SROIEDataset
+    mask : torch.Tensor
+        mask from SROIEDataset
+    class_labels : torch.Tensor
+        class labels from SROIEDataset
+
+    Returns
+    -------
+    field_type_classification_loss : torch.Tensor
+        classification loss
+    """
     device = coords.device
-    
+
     bs = coords.shape[0]
     seq_len = coords.shape[1]
     field_types = class_labels.shape[1]

@@ -225,12 +225,12 @@ def ground_truth_extraction(
                 edge_ptr = left_coor
                 for text_word in text_words:
                     word_length = len(text_word)
-                    
+
                     left_coor_ = edge_ptr
                     top_coor_ = top_coor
                     right_coor_ = int(edge_ptr + word_length * char_length)
                     bot_coor_ = bot_coor
-                    
+
                     if target_shape is not None:
                         left_coor_ = int(
                             (left_coor_ / image_shape[1]) * target_shape[1])
@@ -240,7 +240,7 @@ def ground_truth_extraction(
                             (right_coor_ / image_shape[1]) * target_shape[1])
                         bot_coor_ = int(
                             (bot_coor_ / image_shape[0]) * target_shape[0])
-                        
+
                     gt_dataframe = dataframe_append(
                         gt_dataframe,
                         left_coor_,
@@ -249,7 +249,7 @@ def ground_truth_extraction(
                         bot_coor_,
                         text_word
                     )
-                    
+
                     edge_ptr += int((word_length + 1) * char_length)
             else:
                 if target_shape is not None:
@@ -261,7 +261,7 @@ def ground_truth_extraction(
                         (right_coor / image_shape[1]) * target_shape[1])
                     bot_coor = int(
                         (bot_coor / image_shape[0]) * target_shape[0])
-                    
+
                 gt_dataframe = dataframe_append(
                     gt_dataframe,
                     left_coor,

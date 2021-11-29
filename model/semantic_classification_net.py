@@ -2,7 +2,15 @@ import torch.nn as nn
 
 
 class SemanticSegmentationNet(nn.Module):
-    def __init__(self, fuse_channel) -> None:
+    def __init__(self, fuse_channel: int) -> None:
+        """semantic segmentation net
+           two 3*3 conv + upsample + 1*1 conv
+
+        Parameters
+        ----------
+        fuse_channel : int
+            number of channels in p_fuse
+        """
         super().__init__()
 
         self.conv_1 = nn.Conv2d(

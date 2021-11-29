@@ -84,6 +84,7 @@ class ResNetFPN_ViBERTgrid(nn.Module):
     fuse_channel : int, optional
         number of channels of P_{fuse} mentioned in sec 3.1.2 of the paper, by default 256
     """
+
     def __init__(
         self,
         block: nn.Module,
@@ -174,3 +175,27 @@ class ResNetFPN_ViBERTgrid(nn.Module):
         x_fuse = self.fuse(x_fuse)
 
         return x_fuse
+
+
+def resnet_18_fpn(grid_channel: int) -> nn.Module:
+    """return ResNet_18_FPN
+
+    Parameters
+    ----------
+    grid_channel : int
+        number of channels in ViBERTgrid
+
+    Returns
+    -------
+    resnet_18_fpn: nn.Module
+        network
+
+    """
+    block = BasicBlock
+    net = ResNetFPN_ViBERTgrid(
+        block=block,
+        size_list=[2, 2, 2, 2],
+        grid_channel=grid_channel
+    )
+
+    return net

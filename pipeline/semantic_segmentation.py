@@ -9,7 +9,24 @@ def semantic_segmentation(
     fuse_feature: torch.Tensor,
     pos_neg_labels: torch.Tensor,
     class_labels: torch.Tensor
-):
+) -> torch.Tensor:
+    """auxiliary semantic segmentation head,  
+       apply two multi-class classification to the feature map,
+
+    Parameters
+    ----------
+    fuse_feature : torch.Tensor
+        p_fuse feature maps mentioned in sec 3.1.2 of the paper
+    pos_neg_labels : torch.Tensor
+        pos_neg labels from SROIEDataset
+    class_labels : torch.Tensor
+        class labels from SROIEDataset
+
+    Returns
+    -------
+    aux_loss : torch.Tensor
+        auxiliary segmentation loss
+    """
     device = fuse_feature.device
     fuse_channel = fuse_feature.shape[1]
 
