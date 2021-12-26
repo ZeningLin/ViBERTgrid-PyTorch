@@ -11,8 +11,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.feature_extraction.text import CountVectorizer
 
-import pytesseract
-
 from typing import List, Tuple
 
 LOG_DIR = './log.txt'
@@ -50,6 +48,10 @@ def ocr_extraction(
         image shape
 
     """
+    import pytesseract
+
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+
     image_orig = plt.imread(dir_image, format='jpeg')
     img_shape = image_orig.shape
     information_dataframe: pd.DataFrame = pytesseract.image_to_data(
@@ -285,6 +287,9 @@ def ground_truth_extraction(
 
     total_float = re.search(r'([-+]?[0-9]*\.?[0-9]+)', key_info['total'])
     for index, row in gt_dataframe.iterrows():
+        # default value
+        gt_dataframe.loc[index, 'pos_neg'] = 2
+
         # retrieve 'company' in gt_dataframe
         if cosine_simularity(count_vectorizer[0].reshape(1, -1),
                              count_vectorizer[index + len(data_classes)].reshape(1, -1)) > cosine_sim_treshold:
@@ -374,13 +379,13 @@ def generate_label(
     """
     if(target_shape is not None):
         pos_neg_label = np.zeros(
-            (3, target_shape[0], target_shape[1]), dtype=int)
+            (target_shape[0], target_shape[1]), dtype=int)
         class_label = np.zeros(
-            (num_class, target_shape[0], target_shape[1]), dtype=int)
+            (target_shape[0], target_shape[1]), dtype=int)
     else:
-        pos_neg_label = np.zeros((3, img_shape[0], img_shape[1]), dtype=int)
+        pos_neg_label = np.zeros((img_shape[0], img_shape[1]), dtype=int)
         class_label = np.zeros(
-            (num_class, img_shape[0], img_shape[1]), dtype=int)
+            (img_shape[0], img_shape[1]), dtype=int)
     for _, row in gt_dataframe.iterrows():
         left_coor = row['left']
         right_coor = row['right']
@@ -389,15 +394,8 @@ def generate_label(
         pos_neg = row['pos_neg']
         data_class = row['data_class']
 
-        # if(target_shape is not None):
-        #     left_coor = int((left_coor / img_shape[0]) * target_shape[0])
-        #     right_coor = int((right_coor / img_shape[0]) * target_shape[0])
-        #     top_coor = int((top_coor / img_shape[1]) * target_shape[1])
-        #     bot_coor = int((bot_coor / img_shape[1]) * target_shape[1])
-
-        pos_neg_label[pos_neg, top_coor:bot_coor, left_coor:right_coor] = 1
-        class_label[data_class, top_coor:bot_coor,
-                    left_coor:right_coor] = 1
+        pos_neg_label[top_coor:bot_coor, left_coor:right_coor] = pos_neg
+        class_label[top_coor:bot_coor, left_coor:right_coor] = data_class
 
     return pos_neg_label, class_label
 
@@ -620,15 +618,17 @@ def train_parser_multiprocessing(
 
 
 if __name__ == '__main__':
-    RESIZE_SHAPE = (336, 256)
+    # RESIZE_SHAPE = (336, 256)
     data_classes = ['company', 'date', 'address', 'total']
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
     dir_train_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\train_raw'
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
+    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape\train'
+
+    if not os.path.exists(dir_processed):
+        os.mkdir(dir_processed)
 
     train_parser(
         data_classes=data_classes,
         dir_train_root=dir_train_root,
         dir_processed=dir_processed,
-        target_shape=RESIZE_SHAPE
+        target_shape=None
     )

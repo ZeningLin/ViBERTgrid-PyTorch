@@ -1,4 +1,5 @@
 import os
+import warnings
 # import pysnooper
 from tqdm import tqdm
 from typing import Tuple, Optional, Callable
@@ -14,6 +15,57 @@ from transformers import BertTokenizer
 
 
 class SROIEDataset(Dataset):
+    """Dataset for 
+
+    The ICDAR 2019 Robust Reading Challenge on Scanned Receipts OCR and Information Extraction,
+    task3: Key Information Extraction 
+    
+    originally from https://github.com/zzzDavid/ICDAR-2019-SROIE, 
+    preprocessed by data_preprocessing.py and data_spilt.py
+
+    Parameters
+    ----------
+    root : str
+        root directory of the dataset, which contains 'train' and 'validate' folders 
+    train : bool, optional
+        set True if loading training set, else False, by default True
+    tokenizer : Optional[Callable], optional
+        tokenizer used for corpus generation, 
+        from huggingface/transformer library,
+        e.g transformer.BertTokenizer, 
+        by default None
+    
+    Returns
+    -------
+    imgs: tuple[torch.Tensor]
+        tuple of original images, 
+        each with shape [3, H, W]
+        need further transforms for forward propagation
+    class_labels: tuple[torch.Tensor]
+        tuple of class labels, same in shape with images, 
+        each with shape [num_classes, H, W].
+        if the pixel at (x, y) belongs to class [3], then the value at
+        channel [3] (in other words, at coor (3, x, y)) is one and zero
+        at other channels.
+        need further transforms for forward propagation
+    pos_neg_labels: tuple[torch.Tensor]
+        tuple of pos_neg labels, same in shape with images, 
+        each with shape [3, H, W].
+        channel [0] = 1 if the pixel belongs to background
+        channel [1] = 1 if the pixel belongs to key text region
+        channel [2] = 1 if the pixel belongs to non-key text region
+        need further transforms for forward propagation
+    ocr_coors: torch.Tensor
+        coordinates of each token
+    ocr_corpus: torch.Tensor
+        corpus generated from the given OCR result, padding performed.
+    mask: torch.Tensor
+        BERT-like model requires input with constant length (typically 512), 
+        if len(corpus) < constant_length, padding will be performed.
+        mask indicates where the padding steps are. len(mask) = constant_length, 
+        mask[step] = 0 at padding steps, 1 otherwise.
+    
+    """
     def __init__(
         self,
         root: str,
@@ -28,7 +80,6 @@ class SROIEDataset(Dataset):
         self.root = root
         self.train = train
         self.tokenizer = tokenizer
-        # self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', add_special_tokens = True)
         self.max_length = 0
         self.transform_img = torchvision.transforms.Compose([
             torchvision.transforms.ToTensor()
@@ -101,10 +152,6 @@ class SROIEDataset(Dataset):
                 torch.tensor(ocr_corpus, dtype=torch.long))
 
     @staticmethod
-    def _coll_func(batch):
-        return tuple(zip(*batch))
-
-    @staticmethod
     def _ViBERTgrid_coll_func(samples):
         imgs = []
         class_labels = []
@@ -126,13 +173,19 @@ class SROIEDataset(Dataset):
         mask = mask.masked_fill_((ocr_corpus != 0), 1)
 
         return (tuple(imgs),
-                torch.stack(class_labels, dim=0),
-                torch.stack(pos_neg_labels, dim=0),
-                ocr_coors,
+                tuple(class_labels),
+                tuple(pos_neg_labels),
+                ocr_coors.int(),
                 ocr_corpus,
-                mask)
+                mask.int())
 
     def _extract_train(self, root: str):
+        """@Deprecated
+        Memory exhausted implementation, no longer available
+        
+        """
+        warnings.warn("This function is deprecated", DeprecationWarning)
+        
         dir_img = os.path.join(root, 'image')
         dir_class = os.path.join(root, 'class')
         dir_pos_neg = os.path.join(root, 'pos_neg')
@@ -167,7 +220,7 @@ class SROIEDataset(Dataset):
                 # debug----------------------------------------------------
                 curr_ocr_result = [data_line.strip().split(',')[1:]
                                    for data_line in data_lines]
-                if(len(curr_ocr_result) == 0):
+                if len(curr_ocr_result) == 0:
                     print('\nempty result found in data extraction, please check')
                     print(file.replace('.jpg', 'csv'))
                 # ---------------------------------------------------------
@@ -181,9 +234,10 @@ def load_train_dataset(
     root: str,
     batch_size: int,
     num_workers: int = 0,
-    tokenizer: Optional[Callable] = None
+    tokenizer: Optional[Callable] = None,
+    return_mean_std : bool = False
 ) -> Tuple[DataLoader]:
-    """load SROIE trainset then spilt into train & validation subset
+    """load SROIE train dataset
 
     Parameters
     ----------
@@ -195,15 +249,22 @@ def load_train_dataset(
         number of workers in dataloader, by default 0
     tokenizer : optional
         tokenizer
+    return_mean_std : bool
+        if True, return mean and std of train set, by default False
 
     Returns
     -------
     train_loader : DataLoader
     val_loader : DataLoader
+    image_mean : numpy.ndarray
+    image_std : numpy.ndarray
 
     """
-    SROIE_train_dataset = SROIEDataset(root, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(root, train=False, tokenizer=tokenizer)
+    dir_train = os.path.join(root, 'train')
+    dir_val = os.path.join(root, 'validate')
+    
+    SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
+    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
 
     train_loader = DataLoader(
         SROIE_train_dataset, batch_size=batch_size, shuffle=True,
@@ -212,20 +273,38 @@ def load_train_dataset(
     val_loader = DataLoader(
         SROIE_val_dataset, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func)
+    
+    if return_mean_std:
+        print("calculating mean and std")
+        image_mean = torch.zeros(3)
+        image_std = torch.zeros(3)
+        for image_list, _, _, _, _, _ in tqdm(train_loader):
+            for batch_index in range(batch_size):
+                if batch_index >= len(image_list):
+                    continue
+                curr_img = image_list[batch_index]
+                for d in range(3):
+                    image_mean[d] += curr_img[d, :, :].mean()
+                    image_std[d] += curr_img[d, :, :].std()
+        image_mean.div_(len(SROIE_train_dataset))
+        image_std.div_(len(SROIE_train_dataset))
+        
+        return train_loader, val_loader, image_mean.numpy(), image_std.numpy()
 
     return train_loader, val_loader
 
 
 if __name__ == '__main__':
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
+    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape'
     model_version = 'bert-base-uncased'
     print('loading bert pretrained')
     tokenizer = BertTokenizer.from_pretrained(model_version)
-    train_loader, val_loader = load_train_dataset(
+    train_loader, val_loader, image_mean, image_std = load_train_dataset(
         dir_processed,
         batch_size=4,
         num_workers=0,
-        tokenizer=tokenizer
+        tokenizer=tokenizer,
+        return_mean_std=True
     )
 
     for train_batch in tqdm(train_loader):
