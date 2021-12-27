@@ -64,11 +64,9 @@ class LateFusion(nn.Module):
     roi_shape : Any
         shape of roi, int or tuple. 
         if int, shape = (roi_shape, roi_shape)
-    device : Any
-        device used, 'cpu' or torch.cuda
     """
 
-    def __init__(self, bert_hidden_size: int, roi_channel: int, roi_shape: Any, device) -> None:
+    def __init__(self, bert_hidden_size: int, roi_channel: int, roi_shape: Any) -> None:
         super().__init__()
 
         self.BERT_dimension = bert_hidden_size
@@ -84,13 +82,13 @@ class LateFusion(nn.Module):
         self.ROI_embedding_net = ROIEmbedding(
             num_channels=roi_channel,
             roi_shape=(ROI_output[0], ROI_output[1])
-        ).to(device)
+        )
 
         self.fuse_embedding_net = SingleLayer(
             in_channels=self.BERT_dimension + 1024,
             out_channels=1024,
             bias=True
-        ).to(device)
+        )
 
     def forward(self, ROI_output: torch.Tensor, BERT_embeddings: torch.Tensor):
         """forward propagation of late fusion

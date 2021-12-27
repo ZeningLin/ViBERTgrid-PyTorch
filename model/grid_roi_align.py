@@ -76,13 +76,13 @@ class GridROIAlign(nn.Module):
         coords_list = list()
         if mask is None:
             for bs_index in range(coords.shape[0]):
-                coords_list.append(coords[bs_index])
+                coords_list.append(coords[bs_index].float())
         else:
             self.output_reshape = False
             for bs_index in range(coords.shape[0]):
                 # get the length of valid corpus, discard paddings
                 valid_index = mask[bs_index].sum(dim=0).int()
-                coords_list.append(coords[bs_index, : valid_index])
+                coords_list.append(coords[bs_index, : valid_index].float())
 
         roi_output: torch.Tensor = self.ROI_Align_net(
             feature_map,
