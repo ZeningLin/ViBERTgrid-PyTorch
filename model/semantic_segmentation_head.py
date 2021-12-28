@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class SemanticSegmentationEncoder(nn.Module):
-    def __init__(self, fuse_channel: int) -> None:
+    def __init__(self, fuse_channel: int, num_classes: int) -> None:
         """semantic segmentation net
            two 3*3 conv + upsample + 1*1 conv
 
@@ -11,6 +11,8 @@ class SemanticSegmentationEncoder(nn.Module):
         ----------
         fuse_channel : int
             number of channels in p_fuse
+        num_classes : int
+            number of classes
         """
         super().__init__()
 
@@ -20,7 +22,7 @@ class SemanticSegmentationEncoder(nn.Module):
             kernel_size=3,
             stride=1,
             padding=1,
-            bias=False
+            bias=False,
         )
         self.bn_1 = nn.BatchNorm2d(num_features=fuse_channel)
         self.activation_1 = nn.ReLU(inplace=True)
@@ -30,21 +32,17 @@ class SemanticSegmentationEncoder(nn.Module):
             kernel_size=3,
             stride=1,
             padding=1,
-            bias=False
+            bias=False,
         )
         self.bn_2 = nn.BatchNorm2d(num_features=fuse_channel)
         self.activation_2 = nn.ReLU(inplace=True)
         # TODO: what kind of upsampling should be used?
         self.upsampling = nn.UpsamplingNearest2d(scale_factor=4)
         self.conv_3_1 = nn.Conv2d(
-            in_channels=fuse_channel,
-            out_channels=3,
-            kernel_size=1
+            in_channels=fuse_channel, out_channels=3, kernel_size=1
         )
         self.conv_3_2 = nn.Conv2d(
-            in_channels=fuse_channel,
-            out_channels=fuse_channel,
-            kernel_size=1
+            in_channels=fuse_channel, out_channels=num_classes, kernel_size=1
         )
 
     def forward(self, x):
@@ -63,7 +61,7 @@ class SemanticSegmentationEncoder(nn.Module):
 
 
 class SemanticSegmentationClassifier(nn.Module):
-    """auxiliary semantic segmentation head,  
+    """auxiliary semantic segmentation head,
        apply two multi-class classification to the feature map
 
     Parameters
@@ -74,10 +72,12 @@ class SemanticSegmentationClassifier(nn.Module):
         [description], by default None
     """
 
-    def __init__(self, p_fuse_channel: int, loss_weights: torch.Tensor = None) -> None:
+    def __init__(
+        self, p_fuse_channel: int, num_classes: int, loss_weights: torch.Tensor = None
+    ) -> None:
         super().__init__()
         self.semantic_segmentation_encoder = SemanticSegmentationEncoder(
-            fuse_channel=p_fuse_channel
+            fuse_channel=p_fuse_channel, num_classes=num_classes
         )
 
         if loss_weights is not None:
@@ -91,7 +91,7 @@ class SemanticSegmentationClassifier(nn.Module):
         self,
         fuse_feature: torch.Tensor,
         pos_neg_labels: torch.Tensor,
-        class_labels: torch.Tensor
+        class_labels: torch.Tensor,
     ) -> torch.Tensor:
         """forward propagation of SemanticSegmentationClassifier
 
@@ -115,4 +115,4 @@ class SemanticSegmentationClassifier(nn.Module):
         aux_loss_1_val = self.aux_loss_1(x_out_1, pos_neg_labels.argmax(dim=1))
         aux_loss_2_val = self.aux_loss_2(x_out_2, class_labels.argmax(dim=1))
 
-        return aux_loss_1_val + aux_loss_2_val
+        return aux_loss_1_val + aux_loss_2_val, x_out_1, x_out_2

@@ -9,8 +9,9 @@ class ROIEmbedding(nn.Module):
         super().__init__()
 
         if isinstance(roi_shape, Tuple):
-            assert len(
-                roi_shape) == 2, f"roi_shape must be int or two-element tuple, {len(roi_shape)} elements were given"
+            assert (
+                len(roi_shape) == 2
+            ), f"roi_shape must be int or two-element tuple, {len(roi_shape)} elements were given"
             num_flatten = num_channels * roi_shape[0] * roi_shape[1]
         elif isinstance(roi_shape, int):
             num_flatten = num_channels * roi_shape * roi_shape
@@ -18,11 +19,13 @@ class ROIEmbedding(nn.Module):
             raise ValueError("roi_shape must be int or two-element tuple")
 
         self.conv_1 = nn.Conv2d(
-            num_channels, num_channels, kernel_size=3, stride=1, padding=1, bias=False)
+            num_channels, num_channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
         self.bn_1 = nn.BatchNorm2d(num_channels)
         self.activation_1 = nn.ReLU(inplace=True)
         self.conv_2 = nn.Conv2d(
-            num_channels, num_channels, kernel_size=3, stride=1, padding=1, bias=False)
+            num_channels, num_channels, kernel_size=3, stride=1, padding=1, bias=False
+        )
         self.bn_2 = nn.BatchNorm2d(num_channels)
         self.activation_2 = nn.ReLU(inplace=True)
         self.flatten = nn.Flatten()
@@ -45,8 +48,9 @@ class ROIEmbedding(nn.Module):
 class SingleLayer(nn.Module):
     def __init__(self, in_channels, out_channels, bias: bool = True) -> None:
         super().__init__()
-        self.linear = nn.Linear(in_features=in_channels,
-                                out_features=out_channels, bias=bias)
+        self.linear = nn.Linear(
+            in_features=in_channels, out_features=out_channels, bias=bias
+        )
 
     def forward(self, x):
         return self.linear(x)
@@ -62,7 +66,7 @@ class LateFusion(nn.Module):
     roi_channel : int
         number of channels of roi
     roi_shape : Any
-        shape of roi, int or tuple. 
+        shape of roi, int or tuple.
         if int, shape = (roi_shape, roi_shape)
     """
 
@@ -76,18 +80,14 @@ class LateFusion(nn.Module):
         elif isinstance(roi_shape, Tuple):
             ROI_output = roi_shape
         else:
-            raise TypeError(
-                f'roi_shape must be int or Tuple, {type(roi_shape)} given')
+            raise TypeError(f"roi_shape must be int or Tuple, {type(roi_shape)} given")
 
         self.ROI_embedding_net = ROIEmbedding(
-            num_channels=roi_channel,
-            roi_shape=(ROI_output[0], ROI_output[1])
+            num_channels=roi_channel, roi_shape=(ROI_output[0], ROI_output[1])
         )
 
         self.fuse_embedding_net = SingleLayer(
-            in_channels=self.BERT_dimension + 1024,
-            out_channels=1024,
-            bias=True
+            in_channels=self.BERT_dimension + 1024, out_channels=1024, bias=True
         )
 
     def forward(self, ROI_output: torch.Tensor, BERT_embeddings: torch.Tensor):
@@ -111,7 +111,8 @@ class LateFusion(nn.Module):
         ROI_embeddings: torch.Tensor = self.ROI_embedding_net(ROI_output)
         # (bs*seq_len, 1024) + (bs, seq_len, BERT_dimension) -> (bs*seq_len)
         fuse_embeddings = torch.cat(
-            (ROI_embeddings, BERT_embeddings.reshape(-1, self.BERT_dimension)), dim=1)
+            (ROI_embeddings, BERT_embeddings.reshape(-1, self.BERT_dimension)), dim=1
+        )
 
         # (bs*seq_len, 1024)
         fuse_embeddings = self.fuse_embedding_net(fuse_embeddings)
@@ -120,37 +121,33 @@ class LateFusion(nn.Module):
 
 
 class FieldTypeClassification(nn.Module):
-    """a simplified version of field type classification,  
+    """a simplified version of field type classification,
     discard the original two-stage classification pipeline
 
     apply classification to all ROIs seperately
 
     Parameters
     ----------
-    num_classes : [type]
-        [description]
-    fuse_embedding_shape : [type]
-        [description]
-    loss_weights : [type], optional
-        [description], by default None
+    num_classes : int
+        number of classes
+    fuse_embedding_channel : int
+        number of channels of fuse embeddings
+    loss_weights : torch.Tensor, optional
+        weights used in CrossEntropyLoss, deal with data imbalance, by default None
 
     """
 
     def __init__(
-        self,
-        num_classes: int,
-        fuse_embedding_channel: int,
-        loss_weights=None
+        self, num_classes: int, fuse_embedding_channel: int, loss_weights=None
     ) -> None:
         super().__init__()
         self.classification_net = SingleLayer(
-            in_channels=fuse_embedding_channel,
-            out_channels=num_classes,
-            bias=True
+            in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
         )
         if loss_weights is not None:
             self.field_type_classification_loss = nn.CrossEntropyLoss(
-                weight=loss_weights)
+                weight=loss_weights
+            )
         else:
             self.field_type_classification_loss = nn.CrossEntropyLoss()
 
@@ -159,9 +156,9 @@ class FieldTypeClassification(nn.Module):
         fuse_embeddings: torch.Tensor,
         coords: torch.Tensor,
         mask: torch.Tensor,
-        class_labels: torch.Tensor
+        class_labels: torch.Tensor,
     ) -> torch.Tensor:
-        """a simplified version of field type classification,  
+        """a simplified version of field type classification,
         discard the original two-stage classification pipeline
 
         apply classification to all ROIs seperately
@@ -181,6 +178,8 @@ class FieldTypeClassification(nn.Module):
         -------
         field_type_classification_loss : torch.Tensor
             classification loss
+        pred_class : torch.Tensor
+            prediction class result
         """
         device = coords.device
 
@@ -188,12 +187,12 @@ class FieldTypeClassification(nn.Module):
         seq_len = coords.shape[1]
         field_types = class_labels.shape[1]
         # (bs*seq_len, 1024) -> (bs, seq_len, 1024)
-        fuse_embeddings = fuse_embeddings.reshape(
-            bs, -1, fuse_embeddings.shape[-1])
+        fuse_embeddings = fuse_embeddings.reshape(bs, -1, fuse_embeddings.shape[-1])
 
         # (bs*seq_len, field_types)
         pred_class_orig = self.classification_net(
-            fuse_embeddings.reshape(-1, fuse_embeddings.shape[-1]))
+            fuse_embeddings.reshape(-1, fuse_embeddings.shape[-1])
+        )
         pred_class_orig = pred_class_orig.reshape(bs, seq_len, field_types)
 
         # TODO Low efficiency implementation, need optimization
@@ -208,21 +207,23 @@ class FieldTypeClassification(nn.Module):
                         cur_coor[3] += 1
                     if cur_coor[0] == cur_coor[2]:
                         cur_coor[2] += 1
-                    curr_label_class = class_labels[bs_index, :, cur_coor[1]:cur_coor[3],
-                                                    cur_coor[0]:cur_coor[2]]
-                    curr_label_class = curr_label_class.argmax(
-                        dim=0).reshape(-1)
+                    curr_label_class = class_labels[
+                        bs_index,
+                        :,
+                        cur_coor[1] : cur_coor[3],
+                        cur_coor[0] : cur_coor[2],
+                    ]
+                    curr_label_class = curr_label_class.argmax(dim=0).reshape(-1)
                     curr_label_class = curr_label_class.bincount().argmax().item()
                     label_class.append(curr_label_class)
-                    pred_class.append(
-                        pred_class_orig[None, bs_index, seq_index])
+                    pred_class.append(pred_class_orig[None, bs_index, seq_index])
                 else:
                     continue
 
         label_class = torch.tensor(label_class).to(device)
         pred_class = torch.cat(pred_class, dim=0).to(device)
 
-        # TODO computing CELoss is time-comsuming
         classification_loss_val = self.field_type_classification_loss(
-            pred_class, label_class)
-        return classification_loss_val
+            pred_class, label_class
+        )
+        return classification_loss_val, label_class.int(), pred_class.argmax(dim=1).int()
