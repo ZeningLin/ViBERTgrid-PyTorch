@@ -10,7 +10,7 @@ import PIL.Image as Image
 import torch
 import torchvision
 from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import distributed, Dataset, DataLoader, BatchSampler
 from transformers import BertTokenizer
 
 
@@ -19,7 +19,7 @@ class SROIEDataset(Dataset):
 
     The ICDAR 2019 Robust Reading Challenge on Scanned Receipts OCR and Information Extraction,
     task3: Key Information Extraction 
-    
+
     originally from https://github.com/zzzDavid/ICDAR-2019-SROIE, 
     preprocessed by data_preprocessing.py and data_spilt.py
 
@@ -34,7 +34,7 @@ class SROIEDataset(Dataset):
         from huggingface/transformer library,
         e.g transformer.BertTokenizer, 
         by default None
-    
+
     Returns
     -------
     imgs: tuple[torch.Tensor]
@@ -64,8 +64,9 @@ class SROIEDataset(Dataset):
         if len(corpus) < constant_length, padding will be performed.
         mask indicates where the padding steps are. len(mask) = constant_length, 
         mask[step] = 0 at padding steps, 1 otherwise.
-    
+
     """
+
     def __init__(
         self,
         root: str,
@@ -182,10 +183,10 @@ class SROIEDataset(Dataset):
     def _extract_train(self, root: str):
         """@Deprecated
         Memory exhausted implementation, no longer available
-        
+
         """
         warnings.warn("This function is deprecated", DeprecationWarning)
-        
+
         dir_img = os.path.join(root, 'image')
         dir_class = os.path.join(root, 'class')
         dir_pos_neg = os.path.join(root, 'pos_neg')
@@ -235,7 +236,7 @@ def load_train_dataset(
     batch_size: int,
     num_workers: int = 0,
     tokenizer: Optional[Callable] = None,
-    return_mean_std : bool = False
+    return_mean_std: bool = False
 ) -> Tuple[DataLoader]:
     """load SROIE train dataset
 
@@ -262,8 +263,9 @@ def load_train_dataset(
     """
     dir_train = os.path.join(root, 'train')
     dir_val = os.path.join(root, 'validate')
-    
-    SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
+
+    SROIE_train_dataset = SROIEDataset(
+        dir_train, train=True, tokenizer=tokenizer)
     SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
 
     train_loader = DataLoader(
@@ -273,7 +275,7 @@ def load_train_dataset(
     val_loader = DataLoader(
         SROIE_val_dataset, batch_size=batch_size, shuffle=True,
         num_workers=num_workers, collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func)
-    
+
     if return_mean_std:
         print("calculating mean and std")
         image_mean = torch.zeros(3)
@@ -288,10 +290,59 @@ def load_train_dataset(
                     image_std[d] += curr_img[d, :, :].std()
         image_mean.div_(len(SROIE_train_dataset))
         image_std.div_(len(SROIE_train_dataset))
-        
+
         return train_loader, val_loader, image_mean.numpy(), image_std.numpy()
 
     return train_loader, val_loader
+
+
+def load_train_dataset_multi_gpu(
+    root: str,
+    batch_size: int,
+    num_workers: int = 0,
+    tokenizer: Optional[Callable] = None,
+) -> Tuple[DataLoader]:
+    """load SROIE train dataset in multi-gpu scene
+
+    Parameters
+    ----------
+    root : str
+        root of dataset
+    batch_size : int
+        batch size
+    num_workers : int, optional
+        number of workers in dataloader, by default 0
+    tokenizer : optional
+        tokenizer
+
+    Returns
+    -------
+    train_loader : DataLoader
+    val_loader : DataLoader
+
+    """
+    dir_train = os.path.join(root, 'train')
+    dir_val = os.path.join(root, 'validate')
+
+    SROIE_train_dataset = SROIEDataset(
+        dir_train, train=True, tokenizer=tokenizer)
+    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
+
+    train_sampler = distributed.DistributedSampler(SROIE_train_dataset)
+    val_sampler = distributed.DistributedSampler(SROIE_val_dataset)
+
+    train_batch_sampler = BatchSampler(
+        train_sampler, batch_size=batch_size, drop_last=True)
+
+    train_loader = DataLoader(
+        SROIE_train_dataset, batch_sampler=train_batch_sampler,
+        num_workers=num_workers, collate_fn=SROIE_train_dataset._ViBERTgrid_coll_func)
+
+    val_loader = DataLoader(
+        SROIE_val_dataset, sampler=val_sampler,
+        num_workers=num_workers, collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func)
+
+    return train_loader, val_loader, train_sampler
 
 
 if __name__ == '__main__':
