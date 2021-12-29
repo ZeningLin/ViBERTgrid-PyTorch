@@ -242,6 +242,16 @@ class ViBERTgridNet(nn.Module):
             num_classes=self.num_classes,
             loss_weights=self.loss_weights,
         )
+        
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight)
+                if m.bias is not None:
+                    nn.init.normal_(m.bias, mean=0, std=0.01)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, mean=0, std=0.01)
+                if m.bias is not None:
+                    nn.init.normal_(m.bias, mean=0, std=0.01)
 
     def forward(
         self,
@@ -274,7 +284,7 @@ class ViBERTgridNet(nn.Module):
 
         # Word-level Field Type Classification Head
         # roi align
-        roi_features = self.grid_roi_align_net(p_fuse_features, coors_, mask)
+        roi_features = self.grid_roi_align_net(p_fuse_features, coors_, None)
         # late fusion
         late_fuse_embeddings = self.late_fusion_net(roi_features, BERT_embeddings)
         # field type classification
@@ -287,7 +297,7 @@ class ViBERTgridNet(nn.Module):
         if self.training:
             return total_loss
         else:
-            return pred_mask, pred_ss, gt_label, pred_label
+            return total_loss, pred_mask, pred_ss, gt_label, pred_label
 
 
 if __name__ == "__main__":
@@ -300,8 +310,8 @@ if __name__ == "__main__":
     tokenizer = BertTokenizer.from_pretrained(bert_version)
 
     train_loader, val_loader = load_train_dataset(
-        root=r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape",
-        batch_size=1,
+        root=r"dir_to_data",
+        batch_size=2,
         num_workers=0,
         tokenizer=tokenizer,
     )
@@ -334,7 +344,7 @@ if __name__ == "__main__":
     total_loss.backward()
 
     model.eval()
-    pred_mask, pred_ss, gt_label, pred_label = model(
+    total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
         image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
     )
 
