@@ -81,7 +81,7 @@ class SemanticSegmentationClassifier(nn.Module):
         )
 
         if loss_weights is not None:
-            self.aux_loss_1 = nn.CrossEntropyLoss(weight=loss_weights)
+            self.aux_loss_1 = nn.CrossEntropyLoss()
             self.aux_loss_2 = nn.CrossEntropyLoss(weight=loss_weights)
         else:
             self.aux_loss_1 = nn.CrossEntropyLoss()
@@ -108,6 +108,10 @@ class SemanticSegmentationClassifier(nn.Module):
         -------
         aux_loss : torch.Tensor
             auxiliary segmentation loss
+        pred_mask : torch.Tensor
+            prediction of semantic segmentation mask
+        pred_ss : torch.Tensor
+            prediction of semantic segmentation class
         """
 
         x_out_1, x_out_2 = self.semantic_segmentation_encoder(fuse_feature)
