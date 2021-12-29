@@ -63,7 +63,8 @@ class GridROIAlign(nn.Module):
         coords : torch.Tensor
             coordinates tensor directly from SROIEDataset, in shape (N, seqLen, 4)
         mask : torch.Tensor, optional
-            mask tensor from SROIEDataset, in shape (N, seqLen), by default None
+            mask tensor from SROIEDataset, in shape (N, seqLen).
+            should be None for batch forward pass, by default None
             
         Returns
         -------

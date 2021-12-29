@@ -260,7 +260,7 @@ if __name__ == '__main__':
 
     RESIZE_SHAPE = (336, 256)
 
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
+    dir_processed = r'dir_to_data'
     model_version = 'bert-base-uncased'
     device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
     print('loading bert pretrained')
