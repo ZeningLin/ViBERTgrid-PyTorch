@@ -10,19 +10,34 @@ import torch
 import torch.distributed
 import torch.backends.cudnn
 
-from pipeline.distributed_utils import reduce_loss
+from pipeline.distributed_utils import reduce_loss, get_world_size
 from pipeline.criteria import (
     SROIE_label_classification_criteria,
     SROIE_label_F1_criteria,
 )
+from utils.ViBERTgrid_visualize import inference_visualize
+
+
+class TerminalLogger(object):
+    def __init__(self, filename, stream=sys.stdout):
+        super().__init__()
+        self.terminal = stream
+        self.log = open(filename, "a")
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        pass
 
 
 class TensorboardLogger(object):
-    def __init__(self, log_dir="./runs") -> None:
+    def __init__(self, comment=None) -> None:
         super().__init__()
         from torch.utils.tensorboard import SummaryWriter
 
-        self.writer = SummaryWriter(log_dir=log_dir)
+        self.writer = SummaryWriter(comment=comment)
         self.step = 0
 
     def set_step(self, step=None):
@@ -56,14 +71,14 @@ def cosine_scheduler(
     warmup_steps=-1,
 ) -> np.ndarray:
     warmup_schedule = np.array([])
-    warmup_iters = warmup_epochs * niter_per_ep
+    warmup_iters = warmup_epochs * (niter_per_ep + 1)
     if warmup_steps > 0:
         warmup_iters = warmup_steps
     print("Set warmup steps = %d" % warmup_iters)
     if warmup_epochs > 0:
         warmup_schedule = np.linspace(start_warmup_value, base_value, warmup_iters)
 
-    iters = np.arange(epoches * niter_per_ep - warmup_iters)
+    iters = np.arange(epoches * (niter_per_ep + 1) - warmup_iters)
     schedule = np.array(
         [
             final_value
@@ -76,7 +91,7 @@ def cosine_scheduler(
 
     schedule = np.concatenate((warmup_schedule, schedule))
 
-    assert len(schedule) == epoches * niter_per_ep
+    assert len(schedule) == epoches * (niter_per_ep + 1)
     return schedule
 
 
@@ -176,7 +191,7 @@ def train_one_epoch(
         else:
             train_loss.backward()
             optimizer.step()
-        
+
         end_time = time.time()
         time_iter = end_time - start_time
         start_time = end_time
@@ -185,7 +200,7 @@ def train_one_epoch(
             print(
                 log_message.format(
                     epoch=epoch,
-                    iter=iter_,
+                    iter=step + 1,
                     train_loss=train_loss_value,
                     iter_time=time_iter,
                     memory=torch.cuda.max_memory_allocated() / MB,
@@ -195,7 +210,7 @@ def train_one_epoch(
             print(
                 log_message.format(
                     epoch=epoch,
-                    iter=iter_,
+                    iter=step + 1,
                     train_loss=train_loss_value,
                     iter_time=time_iter,
                 )
@@ -205,6 +220,8 @@ def train_one_epoch(
             logger.update(head="loss", train_loss=train_loss_value)
             logger.update(head="opt", lr=lr_scheduler[iter_])
             logger.update(head="opt", weight_decay=weight_decay_scheduler[iter_])
+
+            logger.set_step()
 
     return train_loss_value
 
@@ -216,17 +233,28 @@ def validate(
     device: torch.device,
     epoch: int,
     logger: TensorboardLogger,
+    distributed: bool = True,
 ):
+    num_iter = len(validate_loader)
     start_time = time.time()
+    iter_message = " ".join(
+        [
+            "\t",
+            "epoch[{epoch}]",
+            "iter[{iter}]/[{num_iter}]",
+        ]
+    )
     log_message = " ".join(
         [
             "\t",
             "epoch[{epoch}]",
+            "validate_loss: {val_loss}",
             "classification_acc: {acc:.3f}%",
             "precision: {precision:.3f}",
             "recall: {recall:.3f}",
             "F1: {F1:.3f}",
             "time used: {time_used:.0f}s",
+            "\n",
         ]
     )
 
@@ -234,7 +262,7 @@ def validate(
     total_num_correct, total_num_entities = 0.0, 0.0
     TP, TN, FP, FN = 0.0, 0.0, 0.0, 0.0
     mean_validate_loss = torch.zeros(1).to(device)
-    for step, train_batch in enumerate(validate_loader):
+    for step, validate_batch in enumerate(validate_loader):
         (
             image_list,
             class_labels,
@@ -242,7 +270,7 @@ def validate(
             ocr_coors,
             ocr_corpus,
             mask,
-        ) = train_batch
+        ) = validate_batch
 
         image_list = tuple(image.to(device) for image in image_list)
         class_labels = tuple(class_label.to(device) for class_label in class_labels)
@@ -263,6 +291,9 @@ def validate(
             step + 1
         )
 
+        if distributed:
+            torch.distributed.barrier()
+
         num_correct, num_entities = SROIE_label_classification_criteria(
             gt_label=gt_label, pred_label=pred_label
         )
@@ -278,6 +309,14 @@ def validate(
         total_num_correct += num_correct
         total_num_entities += num_entities
 
+        print(
+            iter_message.format(
+                epoch=epoch,
+                iter=step + 1,
+                num_iter=num_iter,
+            )
+        )
+
     acc = total_num_correct / (total_num_entities + 1e-8)
     precision = TP / (TP + FP + 1e-8)
     recall = TP / (TP + FN + 1e-8)
@@ -287,6 +326,7 @@ def validate(
     print(
         log_message.format(
             epoch=epoch,
+            val_loss=validate_loss_value,
             acc=acc,
             precision=precision,
             recall=recall,
@@ -296,10 +336,49 @@ def validate(
     )
 
     if logger is not None:
-        logger.update(head="loss", validate_loss=validate_loss_value)
-        logger.update(head="criteria", label_classification_acc=acc)
-        logger.update(head="criteria", label_precision=precision)
-        logger.update(head="criteria", label_recall=recall)
-        logger.update(head="criteria", label_F1=F1)
+        logger.update(head="loss", validate_loss=validate_loss_value, step=epoch)
+        logger.update(head="criteria", label_classification_acc=acc, step=epoch)
+        logger.update(head="criteria", label_precision=precision, step=epoch)
+        logger.update(head="criteria", label_recall=recall, step=epoch)
+        logger.update(head="criteria", label_F1=F1, step=epoch)
 
     return acc, F1
+
+
+@torch.no_grad()
+def inference_once(
+    model: torch.nn.Module,
+    batch: tuple,
+    device: torch.device,
+):
+    model.eval()
+
+    (
+        image_list,
+        class_labels,
+        pos_neg_labels,
+        ocr_coors,
+        ocr_corpus,
+        mask,
+    ) = batch
+
+    image_list = tuple(image.to(device) for image in image_list)
+    class_labels = tuple(class_label.to(device) for class_label in class_labels)
+    pos_neg_labels = tuple(pos_neg_label.to(device) for pos_neg_label in pos_neg_labels)
+    ocr_coors = ocr_coors.to(device)
+    ocr_corpus = ocr_corpus.to(device)
+    mask = mask.to(device)
+
+    start_time = time.time()
+    _, pred_mask, pred_ss, gt_label, pred_label = model(
+        image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+    )
+    time_used = time.time() - start_time
+    print(f"inference speed: {time_used * 1000}ms")
+
+    inference_visualize(
+        image=image_list[0],
+        class_label=class_labels[0],
+        pred_ss=pred_ss,
+        pred_mask=pred_mask,
+    )

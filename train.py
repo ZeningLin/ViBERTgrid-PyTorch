@@ -1,4 +1,5 @@
 import os
+import sys
 import argparse
 import yaml
 import time
@@ -13,6 +14,7 @@ from pipeline.train_val_utils import (
     validate,
     cosine_scheduler,
     TensorboardLogger,
+    TerminalLogger
 )
 from pipeline.distributed_utils import (
     init_distributed_mode,
@@ -121,7 +123,11 @@ def train(args):
     if weights != "":
         print("==> loading pretrained")
         checkpoint = torch.load(weights, map_location="cpu")
-        model_wo_ddp.load_state_dict(checkpoint["model"])
+        model_weights = {
+            k.replace("module.", ""): v
+            for k, v in checkpoint["model"].items()
+        }
+        model_wo_ddp.load_state_dict(model_weights)
         optimizer.load_state_dict(checkpoint["optimizer"])
         lr_schedule_values = (checkpoint["lr_scheduler"]).numpy()
         wd_schedule_values = (checkpoint["wd_scheduler"]).numpy()
@@ -150,10 +156,23 @@ def train(args):
 
     logger = None
     if is_main_process():
-        logger = TensorboardLogger(log_dir="./runs")
+        curr_time = time.localtime()
+        curr_time_h = (
+            f"{curr_time.tm_year:04d}-{curr_time.tm_mon:02d}-{curr_time.tm_mday:02d}"
+        )
+        curr_time_h += (
+            f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
+        )
+        comment = f"{batch_size}_{learning_rate}_{curr_time_h}"
+        logger = TensorboardLogger(comment=comment)
+        if save_log != '':
+            if not os.path.exists(save_log):
+                os.mkdir(save_log)
+            sys.stdout = TerminalLogger(os.path.join(save_log, comment + '.log'), sys.stdout)
+            sys.stderr = TerminalLogger(os.path.join(save_log, comment + '.log'), sys.stdout)
 
-    top_acc = 0.75
-    top_F1 = 0.75
+    top_acc = 0.99
+    top_F1 = 0.90
     print(f"==> start training")
     for epoch in range(start_epoch, end_epoch):
         if args.distributed:
@@ -187,7 +206,7 @@ def train(args):
         if F1 > top_F1 or (epoch % 400 == 0 and epoch != start_epoch):
             top_F1 = F1
             if save_top is not None:
-                if not os.path.exists(save_top):
+                if not os.path.exists(save_top) and is_main_process():
                     os.mkdir(save_top)
                 print(
                     f"==> top criteria found, saving model |epoch[{epoch}]|F1[{top_F1}]|acc[{classification_acc}]|"
@@ -205,10 +224,10 @@ def train(args):
 
                 curr_time = time.localtime()
                 curr_time_h = (
-                    f"{curr_time.tm_year}-{curr_time.tm_mon}-{curr_time.tm_mday}"
+                    f"{curr_time.tm_year:04d}-{curr_time.tm_mon:02d}-{curr_time.tm_mday:02d}"
                 )
-                curr_time_h.join(
-                    f"_{curr_time.tm_hour}:{curr_time.tm_min}:{curr_time.tm_sec}"
+                curr_time_h += (
+                    f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
                 )
 
                 save_on_master(
