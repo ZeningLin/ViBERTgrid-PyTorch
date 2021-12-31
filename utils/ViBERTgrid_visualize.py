@@ -21,21 +21,52 @@ def ViBERTgrid_visualize(ViBERTgrid: torch.Tensor) -> None:
     plt.show()
 
 
-if __name__ == '__main__':
+def inference_visualize(
+    image: torch.Tensor,
+    class_label: torch.Tensor,
+    pred_ss: torch.Tensor,
+    pred_mask: torch.Tensor,
+) -> None:
+    image = image.permute(1, 2, 0).detach().cpu().numpy()
+    class_label = class_label.detach().cpu().numpy()
+    pred_ss = pred_ss.squeeze(0).permute(1, 2, 0).argmax(dim=2).detach().cpu().numpy()
+    pred_mask = pred_mask.squeeze(0).permute(1, 2, 0).argmax(dim=2).detach().cpu().numpy()
+    
+    class_label *= 255
+    pred_ss *= 255
+    pred_mask *= 255
+    
+    plt.figure()
+    plt.subplot(2, 2, 1)
+    plt.imshow(image)
+    plt.title("orig image")
+    
+    plt.subplot(2, 2, 2)
+    plt.imshow(pred_ss)
+    plt.title('pred segmentation')
+
+    plt.subplot(2, 2, 3)
+    plt.imshow(pred_mask)
+    plt.title('pred pos neg')
+
+    plt.subplot(2, 2, 4)
+    plt.imshow(class_label)
+    plt.title('ground truth')
+    
+    plt.show()
+
+
+if __name__ == "__main__":
     from data.SROIE_dataset import load_train_dataset
     from transformers import BertTokenizer
     from tqdm import tqdm
 
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train'
-    model_version = 'bert-base-uncased'
-    print('loading bert pretrained')
+    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train"
+    model_version = "bert-base-uncased"
+    print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     train_loader, val_loader = load_train_dataset(
-        dir_processed,
-        batch_size=4,
-        val_ratio=0.3,
-        num_workers=0,
-        tokenizer=tokenizer
+        dir_processed, batch_size=4, val_ratio=0.3, num_workers=0, tokenizer=tokenizer
     )
 
     total_loss = 0
