@@ -234,6 +234,7 @@ def validate(
     epoch: int,
     logger: TensorboardLogger,
     distributed: bool = True,
+    iter_msg: bool = True
 ):
     num_iter = len(validate_loader)
     start_time = time.time()
@@ -249,10 +250,10 @@ def validate(
             "\t",
             "epoch[{epoch}]",
             "validate_loss: {val_loss}",
-            "classification_acc: {acc:.3f}%",
-            "precision: {precision:.3f}",
-            "recall: {recall:.3f}",
-            "F1: {F1:.3f}",
+            "classification_acc: {acc:.4f}%",
+            "precision: {precision:.4f}",
+            "recall: {recall:.4f}",
+            "F1: {F1:.4f}",
             "time used: {time_used:.0f}s",
             "\n",
         ]
@@ -309,13 +310,14 @@ def validate(
         total_num_correct += num_correct
         total_num_entities += num_entities
 
-        print(
-            iter_message.format(
-                epoch=epoch,
-                iter=step + 1,
-                num_iter=num_iter,
+        if iter_msg:
+            print(
+                iter_message.format(
+                    epoch=epoch,
+                    iter=step + 1,
+                    num_iter=num_iter,
+                )
             )
-        )
 
     acc = total_num_correct / (total_num_entities + 1e-8)
     precision = TP / (TP + FP + 1e-8)
