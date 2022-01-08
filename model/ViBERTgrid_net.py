@@ -66,6 +66,16 @@ class ViBERTgridNet(nn.Module):
         number of channels at late_fusion_embedding, by default 1024
     loss_weights : None, List or torch.Tensor, optional
         reduce the impact of data class imbalance, used in CrossEntropyLoss, by default None
+    num_hard_positive_main: int
+        number of hard positive samples for OHEM in `L_2`, by default -1
+    num_hard_negative_main: int
+        number of hard negative samples for OHEM in `L_2`, by default -1
+    loss_aux_sample_list: List
+        list of numbers of samples for hard example mining in `L_\{AUX-1\}`, by default None
+    num_hard_positive_aux: int
+        number of hard positive samples for OHEM in `L_{AUX-2}`, by default -1
+    num_hard_negative_aux: int
+        number of hard negative samples for OHEM in `L_{AUX-2}`, by default -1
     loss_control_lambda : float, optional
         hyperparameters that controls the ratio of auxiliary loss and classification loss, by default 1
 
@@ -89,6 +99,11 @@ class ViBERTgridNet(nn.Module):
         roi_align_output_reshape: bool = False,
         late_fusion_fuse_embedding_channel: int = 1024,
         loss_weights: Any = None,
+        num_hard_positive_main: int = -1,
+        num_hard_negative_main: int = -1,
+        loss_aux_sample_list: List = None,
+        num_hard_positive_aux: int = -1,
+        num_hard_negative_aux: int = -1,
         loss_control_lambda: float = 1,
     ) -> None:
         super().__init__()
@@ -148,29 +163,36 @@ class ViBERTgridNet(nn.Module):
             bert_model in self.bert_model_list.keys()
         ), f"the given bert model {bert_model} does not exists, see attribute bert_model_list for all bert_models"
         self.bert_hidden_size = self.bert_model_list[bert_model]
-        print("loading pretrained")
-        if "bert-" in bert_model:
-            if tokenizer is None:
-                self.tokenizer = BertTokenizer.from_pretrained(bert_model)
-            elif isinstance(tokenizer, BertTokenizer):
-                self.tokenizer = tokenizer
+        if self.training:
+            print("loading pretrained")
+            if "bert-" in bert_model:
+                if tokenizer is None:
+                    self.tokenizer = BertTokenizer.from_pretrained(bert_model)
+                elif isinstance(tokenizer, BertTokenizer):
+                    self.tokenizer = tokenizer
+                else:
+                    raise ValueError(
+                        "invalid value of parameter tokenizer, must be None or callable BertTokenizer"
+                    )
+                self.bert_model = BertModel.from_pretrained(bert_model)
+            elif "roberta-" in bert_model:
+                if tokenizer is None:
+                    self.tokenizer = RobertaTokenizer.from_pretrained(bert_model)
+                elif isinstance(tokenizer, RobertaTokenizer):
+                    self.tokenizer = tokenizer
+                else:
+                    raise ValueError(
+                        "invalid value of parameter tokenizer, must be None or callable RobertaTokenizer"
+                    )
+                self.bert_model = RobertaModel.from_pretrained(bert_model)
             else:
-                raise ValueError(
-                    "invalid value of parameter tokenizer, must be None or callable BertTokenizer"
-                )
-            self.bert_model = BertModel.from_pretrained(bert_model)
-        elif "roberta-" in bert_model:
-            if tokenizer is None:
-                self.tokenizer = RobertaTokenizer.from_pretrained(bert_model)
-            elif isinstance(tokenizer, RobertaTokenizer):
-                self.tokenizer = tokenizer
-            else:
-                raise ValueError(
-                    "invalid value of parameter tokenizer, must be None or callable RobertaTokenizer"
-                )
-            self.bert_model = RobertaModel.from_pretrained(bert_model)
+                raise ValueError("no tokenizer and bert model loaded")
         else:
-            raise ValueError("no tokenizer and bert model loaded")
+            print("in evaluation mode, no pretrained will be loaded")
+            if "bert-" in bert_model:
+                self.bert_model = BertModel()
+            elif "roberta-" in bert_model:
+                self.bert_model = RobertaModel()
 
         # backbone stuff
         self.backbone_list = ["resnet_18_fpn"]
@@ -234,6 +256,8 @@ class ViBERTgridNet(nn.Module):
         self.field_type_classification_head = FieldTypeClassification(
             num_classes=self.num_classes,
             fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+            num_hard_positive=num_hard_positive_main,
+            num_hard_negative=num_hard_negative_main,
             loss_weights=self.loss_weights,
         )
 
@@ -241,8 +265,11 @@ class ViBERTgridNet(nn.Module):
             p_fuse_channel=self.p_fuse_channel,
             num_classes=self.num_classes,
             loss_weights=self.loss_weights,
+            loss_1_sample_list=loss_aux_sample_list,
+            num_hard_positive=num_hard_positive_aux,
+            num_hard_negative=num_hard_negative_aux,
         )
-        
+
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
                 nn.init.kaiming_normal_(m.weight)
@@ -310,7 +337,7 @@ if __name__ == "__main__":
     tokenizer = BertTokenizer.from_pretrained(bert_version)
 
     train_loader, val_loader = load_train_dataset(
-        root=r"dir_to_data",
+        root=r"/media/dplearning/sde/zening/datasets/ICDAR_SROIE/ViBERTgrid_format/no_reshape/",
         batch_size=2,
         num_workers=0,
         tokenizer=tokenizer,
