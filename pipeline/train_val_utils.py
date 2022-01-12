@@ -4,7 +4,7 @@ import math
 
 import numpy as np
 
-from typing import Iterable, Any
+from typing import Iterable, Any, List
 
 import torch
 import torch.distributed
@@ -66,16 +66,16 @@ def cosine_scheduler(
     final_value,
     epoches,
     niter_per_ep,
-    warmup_epochs=0,
+    warmup_epoches=0,
     start_warmup_value=0,
     warmup_steps=-1,
 ) -> np.ndarray:
     warmup_schedule = np.array([])
-    warmup_iters = warmup_epochs * (niter_per_ep + 1)
+    warmup_iters = warmup_epoches * (niter_per_ep + 1)
     if warmup_steps > 0:
         warmup_iters = warmup_steps
     print("Set warmup steps = %d" % warmup_iters)
-    if warmup_epochs > 0:
+    if warmup_epoches > 0:
         warmup_schedule = np.linspace(start_warmup_value, base_value, warmup_iters)
 
     iters = np.arange(epoches * (niter_per_ep + 1) - warmup_iters)
@@ -95,18 +95,73 @@ def cosine_scheduler(
     return schedule
 
 
+def step_scheduler(
+    base_value: float,
+    steps: List,
+    gamma: float,
+    num_epoches: int,
+    niter_per_ep: int,
+    warmup_epoches: int = 0,
+    start_warmup_value=0,
+    warmup_steps=-1,
+) -> np.ndarray:
+    warmup_schedule = np.array([])
+    warmup_iters = warmup_epoches * (niter_per_ep + 1)
+    if warmup_steps > 0:
+        warmup_iters = warmup_steps
+    print("Set warmup steps = %d" % warmup_iters)
+    if warmup_epoches > 0:
+        warmup_schedule = np.linspace(start_warmup_value, base_value, warmup_iters)
+
+    change_steps = [step * niter_per_ep for step in steps]
+    change_steps.append(num_epoches * (niter_per_ep + 1))
+    schedule = [warmup_schedule]
+    curr_value = base_value
+    start_step = warmup_iters
+    for change_step in change_steps:
+        end_step = change_step
+        curr_schedule = curr_value * np.ones((end_step - start_step))
+        schedule.append(curr_schedule)
+        curr_value *= gamma
+        start_step = end_step
+    schedule = np.concatenate(schedule)
+    assert len(schedule) == num_epoches * (niter_per_ep + 1)
+    
+    return schedule
+
+
 def train_one_epoch(
     model: torch.nn.Module,
-    optimizer: torch.optim.Optimizer,
+    optimizer_cnn: torch.optim.Optimizer,
+    optimizer_bert: torch.optim.Optimizer,
     train_loader: Iterable,
     device: torch.device,
     epoch: int,
     start_step: int,
-    lr_scheduler: Any,
-    weight_decay_scheduler: Any,
+    lr_scheduler_cnn: Any,
+    weight_decay_scheduler_cnn: Any,
+    lr_scheduler_bert: Any,
+    weight_decay_scheduler_bert: Any,
     logger: TensorboardLogger = None,
     scaler: torch.cuda.amp.GradScaler = None,
 ):
+    assert isinstance(
+        lr_scheduler_cnn,
+        (
+            np.ndarray,
+            torch.optim.lr_scheduler.StepLR,
+            torch.optim.lr_scheduler.MultiStepLR,
+        ),
+    ), f"invalid lr_scheduler_cnn, must be numpy.ndarray or torch.optim.lr_scheduler, {type(lr_scheduler_cnn)} given"
+    assert isinstance(
+        lr_scheduler_bert,
+        (
+            np.ndarray,
+            torch.optim.lr_scheduler.StepLR,
+            torch.optim.lr_scheduler.MultiStepLR,
+        ),
+    ), f"invalid lr_scheduler_cnn, must be numpy.ndarray or torch.optim.lr_scheduler, {type(lr_scheduler_bert)} given"
+
     start_time = time.time()
 
     MB = 1024.0 * 1024.0
@@ -135,21 +190,27 @@ def train_one_epoch(
 
     model.train()
 
-    if not isinstance(lr_scheduler, np.ndarray):
-        lr_scheduler.step()
-
     mean_train_loss = torch.zeros(1).to(device)
     for step, train_batch in enumerate(train_loader):
         iter_ = start_step + step
-        if isinstance(lr_scheduler, np.ndarray):
-            for param_group in optimizer.param_groups:
-                if lr_scheduler is not None:
-                    param_group["lr"] = lr_scheduler[iter_]
+        if isinstance(lr_scheduler_cnn, np.ndarray):
+            for param_group in optimizer_cnn.param_groups:
+                if lr_scheduler_cnn is not None:
+                    param_group["lr"] = lr_scheduler_cnn[iter_]
                 if (
-                    weight_decay_scheduler is not None
+                    weight_decay_scheduler_cnn is not None
                     and param_group["weight_decay"] > 0
                 ):
-                    param_group["weight_decay"] = weight_decay_scheduler[iter_]
+                    param_group["weight_decay"] = weight_decay_scheduler_cnn[iter_]
+        if isinstance(lr_scheduler_bert, np.ndarray):
+            for param_group in optimizer_cnn.param_groups:
+                if lr_scheduler_bert is not None:
+                    param_group["lr"] = lr_scheduler_bert[iter_]
+                if (
+                    weight_decay_scheduler_bert is not None
+                    and param_group["weight_decay"] > 0
+                ):
+                    param_group["weight_decay"] = weight_decay_scheduler_bert[iter_]
 
         (
             image_list,
@@ -183,14 +244,17 @@ def train_one_epoch(
             print(f"loss is {train_loss_value}, training will stop")
             sys.exit(1)
 
-        optimizer.zero_grad()
+        optimizer_cnn.zero_grad()
+        optimizer_bert.zero_grad()
         if scaler is not None:
             scaler.scale(train_loss).backward()
-            scaler.step(optimizer)
+            scaler.step(optimizer_cnn)
+            scaler.step(optimizer_bert)
             scaler.update()
         else:
             train_loss.backward()
-            optimizer.step()
+            optimizer_cnn.step()
+            optimizer_bert.step()
 
         end_time = time.time()
         time_iter = end_time - start_time
@@ -218,10 +282,30 @@ def train_one_epoch(
 
         if logger is not None:
             logger.update(head="loss", train_loss=train_loss_value)
-            logger.update(head="opt", lr=lr_scheduler[iter_])
-            logger.update(head="opt", weight_decay=weight_decay_scheduler[iter_])
+            logger.update(
+                head="opt", weight_decay_cnn=weight_decay_scheduler_cnn[iter_]
+            )
+            logger.update(
+                head="opt", weight_decay_bert=weight_decay_scheduler_bert[iter_]
+            )
+            if isinstance(lr_scheduler_cnn, np.ndarray):
+                logger.update(head="opt", lr_cnn=lr_scheduler_cnn[iter_])
+            else:
+                logger.update(head="opt", lr_cnn=lr_scheduler_cnn.get_last_lr()[0])
+            if isinstance(lr_scheduler_bert, np.ndarray):
+                logger.update(head="opt", lr_bert=lr_scheduler_bert[iter_])
+            else:
+                logger.update(head="opt", lr_bert=lr_scheduler_bert.get_last_lr()[0])
 
             logger.set_step()
+
+    if not isinstance(lr_scheduler_cnn, np.ndarray):
+        lr_scheduler_cnn.step()
+    if not isinstance(lr_scheduler_bert, np.ndarray):
+        lr_scheduler_bert.step()
+
+    if device != torch.device("cpu"):
+        torch.cuda.synchronize(device)
 
     return train_loss_value
 
@@ -234,7 +318,7 @@ def validate(
     epoch: int,
     logger: TensorboardLogger,
     distributed: bool = True,
-    iter_msg: bool = True
+    iter_msg: bool = True,
 ):
     num_iter = len(validate_loader)
     start_time = time.time()
@@ -261,7 +345,7 @@ def validate(
 
     model.eval()
     total_num_correct, total_num_entities = 0.0, 0.0
-    TP, TN, FP, FN = 0.0, 0.0, 0.0, 0.0
+    num_precision, num_recall, num_pred_key, num_gt_key = 0.0, 0.0, 0.0, 0.0
     mean_validate_loss = torch.zeros(1).to(device)
     for step, validate_batch in enumerate(validate_loader):
         (
@@ -299,14 +383,18 @@ def validate(
             gt_label=gt_label, pred_label=pred_label
         )
 
-        TP_, TN_, FP_, FN_ = SROIE_label_F1_criteria(
-            gt_label=gt_label, pred_label=pred_label
-        )
+        (
+            num_precision_,
+            num_recall_,
+            num_pred_key_,
+            num_gt_key_,
+        ) = SROIE_label_F1_criteria(gt_label=gt_label, pred_label=pred_label)
 
-        TP += TP_
-        TN += TN_
-        FP += FP_
-        FN += FN_
+        num_precision += num_precision_
+        num_recall += num_recall_
+        num_pred_key += num_pred_key_
+        num_gt_key += num_gt_key_
+
         total_num_correct += num_correct
         total_num_entities += num_entities
 
@@ -319,10 +407,17 @@ def validate(
                 )
             )
 
+    if device != torch.device("cpu"):
+        torch.cuda.synchronize(device)
+
     acc = total_num_correct / (total_num_entities + 1e-8)
-    precision = TP / (TP + FP + 1e-8)
-    recall = TP / (TP + FN + 1e-8)
-    F1 = (2 * precision * recall) / (precision + recall + 1e-8)
+    precision = float(0) if (num_precision == 0) else (num_precision / num_pred_key)
+    recall = float(1) if (num_recall == 0) else (num_recall / num_gt_key)
+    F1 = (
+        float(0)
+        if (precision + recall == 0)
+        else (2 * precision * recall) / (precision + recall)
+    )
 
     time_used = time.time() - start_time
     print(
