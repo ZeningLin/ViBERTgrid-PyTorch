@@ -1,6 +1,144 @@
 import math
 import torch
+import torchvision.transforms
+import numpy as np
 import matplotlib.pyplot as plt
+import PIL
+import PIL.ImageDraw as ImageDraw
+import PIL.ImageFont as ImageFont
+
+from typing import List
+from collections import defaultdict
+
+
+STANDARD_COLORS = [
+    "AliceBlue",
+    "Chartreuse",
+    "Aqua",
+    "Aquamarine",
+    "Azure",
+    "Beige",
+    "Bisque",
+    "BlanchedAlmond",
+    "BlueViolet",
+    "BurlyWood",
+    "CadetBlue",
+    "AntiqueWhite",
+    "Chocolate",
+    "Coral",
+    "CornflowerBlue",
+    "Cornsilk",
+    "Crimson",
+    "Cyan",
+    "DarkCyan",
+    "DarkGoldenRod",
+    "DarkGrey",
+    "DarkKhaki",
+    "DarkOrange",
+    "DarkOrchid",
+    "DarkSalmon",
+    "DarkSeaGreen",
+    "DarkTurquoise",
+    "DarkViolet",
+    "DeepPink",
+    "DeepSkyBlue",
+    "DodgerBlue",
+    "FireBrick",
+    "FloralWhite",
+    "ForestGreen",
+    "Fuchsia",
+    "Gainsboro",
+    "GhostWhite",
+    "Gold",
+    "GoldenRod",
+    "Salmon",
+    "Tan",
+    "HoneyDew",
+    "HotPink",
+    "IndianRed",
+    "Ivory",
+    "Khaki",
+    "Lavender",
+    "LavenderBlush",
+    "LawnGreen",
+    "LemonChiffon",
+    "LightBlue",
+    "LightCoral",
+    "LightCyan",
+    "LightGoldenRodYellow",
+    "LightGray",
+    "LightGrey",
+    "LightGreen",
+    "LightPink",
+    "LightSalmon",
+    "LightSeaGreen",
+    "LightSkyBlue",
+    "LightSlateGray",
+    "LightSlateGrey",
+    "LightSteelBlue",
+    "LightYellow",
+    "Lime",
+    "LimeGreen",
+    "Linen",
+    "Magenta",
+    "MediumAquaMarine",
+    "MediumOrchid",
+    "MediumPurple",
+    "MediumSeaGreen",
+    "MediumSlateBlue",
+    "MediumSpringGreen",
+    "MediumTurquoise",
+    "MediumVioletRed",
+    "MintCream",
+    "MistyRose",
+    "Moccasin",
+    "NavajoWhite",
+    "OldLace",
+    "Olive",
+    "OliveDrab",
+    "Orange",
+    "OrangeRed",
+    "Orchid",
+    "PaleGoldenRod",
+    "PaleGreen",
+    "PaleTurquoise",
+    "PaleVioletRed",
+    "PapayaWhip",
+    "PeachPuff",
+    "Peru",
+    "Pink",
+    "Plum",
+    "PowderBlue",
+    "Purple",
+    "Red",
+    "RosyBrown",
+    "RoyalBlue",
+    "SaddleBrown",
+    "Green",
+    "SandyBrown",
+    "SeaGreen",
+    "SeaShell",
+    "Sienna",
+    "Silver",
+    "SkyBlue",
+    "SlateBlue",
+    "SlateGray",
+    "SlateGrey",
+    "Snow",
+    "SpringGreen",
+    "SteelBlue",
+    "GreenYellow",
+    "Teal",
+    "Thistle",
+    "Tomato",
+    "Turquoise",
+    "Violet",
+    "Wheat",
+    "White",
+    "WhiteSmoke",
+    "Yellow",
+    "YellowGreen",
+]
 
 
 def ViBERTgrid_visualize(ViBERTgrid: torch.Tensor) -> None:
@@ -30,30 +168,89 @@ def inference_visualize(
     image = image.permute(1, 2, 0).detach().cpu().numpy()
     class_label = class_label.detach().cpu().numpy()
     pred_ss = pred_ss.squeeze(0).permute(1, 2, 0).argmax(dim=2).detach().cpu().numpy()
-    pred_mask = pred_mask.squeeze(0).permute(1, 2, 0).argmax(dim=2).detach().cpu().numpy()
-    
+    pred_mask = (
+        pred_mask.squeeze(0).permute(1, 2, 0).argmax(dim=2).detach().cpu().numpy()
+    )
+
     class_label *= 255
     pred_ss *= 255
     pred_mask *= 255
-    
+
     plt.figure()
     plt.subplot(2, 2, 1)
     plt.imshow(image)
     plt.title("orig image")
-    
+
     plt.subplot(2, 2, 2)
     plt.imshow(pred_ss)
-    plt.title('pred segmentation')
+    plt.title("pred segmentation")
 
     plt.subplot(2, 2, 3)
     plt.imshow(pred_mask)
-    plt.title('pred pos neg')
+    plt.title("pred pos neg")
 
     plt.subplot(2, 2, 4)
     plt.imshow(class_label)
-    plt.title('ground truth')
-    
+    plt.title("ground truth")
+
     plt.show()
+
+
+def draw_box(
+    image: torch.Tensor,
+    boxes_dict_list: List[defaultdict],
+    class_list: List[str],
+    line_thickness: int = 4,
+):
+    image = torchvision.transforms.ToPILImage()(image.cpu())
+
+    draw = ImageDraw.Draw(image)
+
+    try:
+        font = ImageFont.truetype("arial.ttf", 24)
+    except IOError:
+        font = ImageFont.load_default()
+
+    for idx, curr_class_box in enumerate(boxes_dict_list):
+        curr_color = STANDARD_COLORS[idx % len(STANDARD_COLORS)]
+        curr_class_str = class_list[idx]
+        text_width, text_height = font.getsize(curr_class_str)
+        margin = np.ceil(0.05 * text_height)
+        for text, coor in curr_class_box.items():
+            left = coor[0]
+            top = coor[1]
+            right = coor[2]
+            bottom = coor[3]
+
+            text_bottom = top
+
+            draw.line(
+                [
+                    (left, top),
+                    (left, bottom),
+                    (right, bottom),
+                    (right, top),
+                    (left, top),
+                ],
+                width=line_thickness,
+                fill=curr_color,
+            )
+
+            draw.rectangle(
+                [
+                    (left, text_bottom - text_height - 2 * margin),
+                    (left + text_width, text_bottom),
+                ],
+                fill=curr_color,
+            )
+            draw.text(
+                (left + margin, text_bottom - text_height - margin),
+                curr_class_str,
+                fill="black",
+                font=font,
+            )
+
+    image.save("./inference_result.jpg")
 
 
 if __name__ == "__main__":
