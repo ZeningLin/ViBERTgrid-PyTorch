@@ -100,7 +100,7 @@ def inference(args):
     model = model.to(device)
     print(f"==> model created")
     
-    inference_once(model=model, batch=batch, device=device)
+    inference_once(model=model, batch=batch, device=device, tokenizer=tokenizer)
 
 
 if __name__ == "__main__":

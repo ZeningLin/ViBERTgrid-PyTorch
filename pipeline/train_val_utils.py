@@ -4,6 +4,7 @@ import math
 
 import numpy as np
 
+from collections import defaultdict
 from typing import Iterable, Any, List
 
 import torch
@@ -15,7 +16,7 @@ from pipeline.criteria import (
     SROIE_label_classification_criteria,
     SROIE_label_F1_criteria,
 )
-from utils.ViBERTgrid_visualize import inference_visualize
+from utils.ViBERTgrid_visualize import inference_visualize, draw_box
 
 
 class TerminalLogger(object):
@@ -126,7 +127,7 @@ def step_scheduler(
         start_step = end_step
     schedule = np.concatenate(schedule)
     assert len(schedule) == num_epoches * (niter_per_ep + 1)
-    
+
     return schedule
 
 
@@ -366,7 +367,7 @@ def validate(
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
-        validate_loss, pred_mask, pred_ss, gt_label, pred_label = model(
+        validate_loss, _, _, gt_label, pred_label = model(
             image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
         )
 
@@ -444,9 +445,7 @@ def validate(
 
 @torch.no_grad()
 def inference_once(
-    model: torch.nn.Module,
-    batch: tuple,
-    device: torch.device,
+    model: torch.nn.Module, batch: tuple, device: torch.device, tokenizer: Any
 ):
     model.eval()
 
@@ -457,7 +456,15 @@ def inference_once(
         ocr_coors,
         ocr_corpus,
         mask,
+        ocr_text,
     ) = batch
+
+    assert (
+        len(image_list) == 1
+    ), f"batch_size must be 1 in inference mode, {len(image_list)} given"
+    
+    ocr_text = ocr_text[0]
+    orig_ocr_coors = ocr_coors.clone().detach()
 
     image_list = tuple(image.to(device) for image in image_list)
     class_labels = tuple(class_label.to(device) for class_label in class_labels)
@@ -467,15 +474,35 @@ def inference_once(
     mask = mask.to(device)
 
     start_time = time.time()
-    _, pred_mask, pred_ss, gt_label, pred_label = model(
+    _, pred_pos_neg_mask, pred_ss, gt_label, pred_label = model(
         image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
     )
     time_used = time.time() - start_time
     print(f"inference speed: {time_used * 1000}ms")
 
+    num_classes = pred_ss.shape[1]
+    class_result = [defaultdict() for _ in range(num_classes - 1)]
+    for curr_text, curr_coor, curr_pred_label, curr_mask in zip(
+        ocr_text, orig_ocr_coors.squeeze(0), pred_label, mask.squeeze(0)
+    ):
+        if curr_mask == 0:
+            continue
+        if curr_pred_label == 0:
+            continue
+        class_result[curr_pred_label.item() - 1].update({curr_text: curr_coor.cpu().numpy().tolist()})
+
+    for item in class_result:
+        print(item)
+
+    draw_box(
+        image=image_list[0],
+        boxes_dict_list=class_result,
+        class_list=['company', 'date', 'address', 'total']
+    )
+
     inference_visualize(
         image=image_list[0],
         class_label=class_labels[0],
         pred_ss=pred_ss,
-        pred_mask=pred_mask,
+        pred_mask=pred_pos_neg_mask,
     )
