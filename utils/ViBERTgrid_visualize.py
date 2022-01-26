@@ -7,7 +7,7 @@ import PIL
 import PIL.ImageDraw as ImageDraw
 import PIL.ImageFont as ImageFont
 
-from typing import List
+from typing import List, Any, Tuple
 from collections import defaultdict
 
 
@@ -141,12 +141,21 @@ STANDARD_COLORS = [
 ]
 
 
-def ViBERTgrid_visualize(ViBERTgrid: torch.Tensor) -> None:
-    num_pic = ViBERTgrid.shape[0]
+def ViBERTgrid_visualize(ViBERTgrid: Any) -> None:
+    if isinstance(ViBERTgrid, (List, Tuple)):
+        num_pic = len(ViBERTgrid)
+    elif isinstance(ViBERTgrid, torch.Tensor):
+        num_pic = ViBERTgrid.shape[0]
     width = int(math.sqrt(num_pic))
     height = int(num_pic / width)
-    grid_convert = torch.mean(ViBERTgrid.float(), dim=1).detach().numpy()
-    grid_convert = grid_convert * 255
+
+    if isinstance(ViBERTgrid, (List, Tuple)):
+        grid_convert = [
+            50 * ViBERTgrid_.float().detach().numpy() for ViBERTgrid_ in ViBERTgrid
+        ]
+    elif isinstance(ViBERTgrid, torch.Tensor):
+        grid_convert = torch.mean(ViBERTgrid.float(), dim=1).detach().numpy()
+        grid_convert *= 255
 
     plt.figure()
     for w in range(width):
@@ -197,12 +206,17 @@ def inference_visualize(
 
 
 def draw_box(
-    image: torch.Tensor,
+    image: Any,
     boxes_dict_list: List[defaultdict],
     class_list: List[str],
     line_thickness: int = 4,
 ):
-    image = torchvision.transforms.ToPILImage()(image.cpu())
+    assert isinstance(
+        image, (PIL.Image, torch.Tensor)
+    ), f"image must be PIL.Image or torch.Tensor, {type(image)} given"
+
+    if isinstance(image, torch.Tensor):
+        image = torchvision.transforms.ToPILImage()(image.cpu())
 
     draw = ImageDraw.Draw(image)
 
@@ -258,12 +272,12 @@ if __name__ == "__main__":
     from transformers import BertTokenizer
     from tqdm import tqdm
 
-    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\train"
+    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape"
     model_version = "bert-base-uncased"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     train_loader, val_loader = load_train_dataset(
-        dir_processed, batch_size=4, val_ratio=0.3, num_workers=0, tokenizer=tokenizer
+        dir_processed, batch_size=4, num_workers=0, tokenizer=tokenizer
     )
 
     total_loss = 0

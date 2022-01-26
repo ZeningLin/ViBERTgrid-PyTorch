@@ -99,6 +99,8 @@ class SROIEDataset(Dataset):
         file = self.filename_list[index]
 
         image = Image.open(os.path.join(dir_img, file))
+        if len(image.split()) != 3:
+            image = image.convert('RGB')
 
         data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
 
@@ -232,6 +234,8 @@ class SROIEDataset(Dataset):
             file: str
 
             image = Image.open(os.path.join(dir_img, file))
+            if len(image.split()) != 3:
+                image = image.convert('RGB')
             img_list.append(image)
 
             data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
@@ -411,7 +415,7 @@ def load_test_data(
 
 
 if __name__ == "__main__":
-    dir_processed = r"/media/dplearning/sde/zening/datasets/ICDAR_SROIE/ViBERTgrid_format/no_reshape/"
+    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape"
     model_version = "bert-base-uncased"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
@@ -422,6 +426,8 @@ if __name__ == "__main__":
         tokenizer=tokenizer,
         return_mean_std=True,
     )
+    
+    print(image_mean, image_std)
 
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch
