@@ -6,6 +6,7 @@ from tqdm import tqdm
 from typing import Tuple, Optional, Callable
 
 import numpy as np
+import pandas as pd
 import PIL.Image as Image
 
 import torch
@@ -94,7 +95,7 @@ class SROIEDataset(Dataset):
         dir_img = os.path.join(self.root, "image")
         dir_class = os.path.join(self.root, "class")
         dir_pos_neg = os.path.join(self.root, "pos_neg")
-        dir_ocr_result = os.path.join(self.root, "ocr_result")
+        dir_ocr_result = os.path.join(self.root, "label")
 
         file = self.filename_list[index]
 
@@ -106,33 +107,12 @@ class SROIEDataset(Dataset):
 
         pos_neg = np.load(os.path.join(dir_pos_neg, file.replace("jpg", "npy")))
 
-        with open(
-            os.path.join(dir_ocr_result, file.replace("jpg", "csv")),
-            "r",
-            encoding="utf-8",
-        ) as csv_file:
-            data_lines = csv_file.readlines()[1:]
-            self.max_length = (
-                len(data_lines)
-                if (len(data_lines) > self.max_length)
-                else self.max_length
-            )
-
-            ocr_result = [
-                (data_line.strip().split(","))[1:-2] for data_line in data_lines
-            ]
-
+        ocr_csv_file: pd.DataFrame = pd.read_csv(os.path.join(dir_ocr_result, file.replace("jpg", "csv")))
         ocr_coor = []
         ocr_text = []
-        for item in ocr_result:
-            curr_text = item[4:]
-            # avoid " ' , in ocr recognition results affect list splitting
-            curr_text = "".join(curr_text)
-            curr_text.replace('"', "")
-            if curr_text == "":
-                continue  # discard empty results
-            ocr_coor.append(list(map(int, item[:4])))
-            ocr_text.append(curr_text)
+        for index, row in ocr_csv_file.iterrows():
+            ocr_text.append(row['text'])
+            ocr_coor.append([row['left'], row['top'], row['right'], row['bot']])
 
         ocr_coor_expand = []
         ocr_tokens = []
