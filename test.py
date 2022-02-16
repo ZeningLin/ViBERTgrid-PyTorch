@@ -6,7 +6,7 @@ from transformers import BertTokenizer, RobertaTokenizer
 
 from model.ViBERTgrid_net import ViBERTgridNet
 from data.SROIE_dataset import load_test_data
-from pipeline.train_val_utils import inference_once
+from pipeline.train_val_utils import validate
 
 
 def inference(args):
@@ -75,14 +75,13 @@ def inference(args):
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
     )
+    model = model.to(device)
+    print(f"==> model created")
 
     if weights != "":
         print("==> loading pretrained")
         checkpoint = torch.load(weights, map_location="cpu")["model"]
-        model_weights = {
-            k.replace("module.", ""): v
-            for k, v in checkpoint.items()
-        }
+        model_weights = {k.replace("module.", ""): v for k, v in checkpoint.items()}
         model.load_state_dict(model_weights)
         print(f"==> pretrained loaded")
     else:
@@ -96,11 +95,17 @@ def inference(args):
             l *= j
         k = k + l
     print("total number of parameters: " + str(k))
-    
-    model = model.to(device)
-    print(f"==> model created")
-    
-    inference_once(model=model, batch=batch, device=device, tokenizer=tokenizer)
+
+    print("==> testing...")
+    validate(
+        model=model,
+        validate_loader=test_loader,
+        device=device,
+        epoch=0,
+        logger=None,
+        distributed=False,
+        iter_msg=False,
+    )
 
 
 if __name__ == "__main__":

@@ -5,20 +5,13 @@ import torch
 from transformers import BertTokenizer, RobertaTokenizer
 
 from model.ViBERTgrid_net import ViBERTgridNet
-from data.SROIE_dataset import load_test_data
-from pipeline.train_val_utils import inference_once
 
-
-def inference(args):
-    with open(args.config, "r") as c:
+def train(args):
+    with open(args.config_path, "r") as c:
         hyp = yaml.load(c, Loader=yaml.FullLoader)
 
     device = hyp["device"]
-    num_workers = hyp["num_workers"]
 
-    weights = hyp["weights"]
-
-    data_root = hyp["data_root"]
     num_classes = hyp["num_classes"]
     image_mean = hyp["image_mean"]
     image_std = hyp["image_std"]
@@ -46,15 +39,6 @@ def inference(args):
         tokenizer = RobertaTokenizer.from_pretrained(bert_version)
     print(f"==> tokenizer {bert_version} loaded")
 
-    print(f"==> loading datasets")
-    test_loader = load_test_data(
-        root=data_root,
-        num_workers=num_workers,
-        tokenizer=tokenizer,
-    )
-    batch = next(iter(test_loader))
-    print(f"==> dataset loaded")
-
     print(f"==> creating model {backbone} | {bert_version}")
     model = ViBERTgridNet(
         num_classes=num_classes,
@@ -64,7 +48,7 @@ def inference(args):
         image_max_size=image_max_size,
         test_image_min_size=test_image_min_size,
         bert_model=bert_version,
-        tokenizer=None,
+        tokenizer=tokenizer,
         backbone=backbone,
         grid_mode=grid_mode,
         early_fusion_downsampling_ratio=early_fusion_downsampling_ratio,
@@ -75,43 +59,24 @@ def inference(args):
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
     )
-
-    if weights != "":
-        print("==> loading pretrained")
-        checkpoint = torch.load(weights, map_location="cpu")["model"]
-        model_weights = {
-            k.replace("module.", ""): v
-            for k, v in checkpoint.items()
-        }
-        model.load_state_dict(model_weights)
-        print(f"==> pretrained loaded")
-    else:
-        raise ValueError("weights must be provided")
-
-    params = list(model.parameters())
-    k = 0
-    for i in params:
-        l = 1
-        for j in i.size():
-            l *= j
-        k = k + l
-    print("total number of parameters: " + str(k))
     
-    model = model.to(device)
-    print(f"==> model created")
+    with open('model_structure.txt', 'w') as f:
+        for name, module in model.named_parameters():
+            f.write(name + '\n')
     
-    inference_once(model=model, batch=batch, device=device, tokenizer=tokenizer)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--config",
+        "-c",
+        "--config_path",
         type=str,
         required=True,
-        help="directory to config file",
+        help="directory to the configuration yaml file",
     )
-
+    parser.add_argument(
+        "--dist-url", default="env://", help="url used to set up distributed training"
+    )
     args = parser.parse_args()
 
-    inference(args)
+    train(args)

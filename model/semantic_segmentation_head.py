@@ -1,19 +1,23 @@
 import torch
 import torch.nn as nn
 
+from pipeline.custom_loss import CrossEntropyLossRandomSample, CrossEntropyLossOHEM
+from typing import List
+
 
 class SemanticSegmentationEncoder(nn.Module):
-    def __init__(self, fuse_channel: int, num_classes: int) -> None:
-        """semantic segmentation net
-           two 3*3 conv + upsample + 1*1 conv
+    """semantic segmentation net
+       two 3*3 conv + upsample + 1*1 conv
 
-        Parameters
-        ----------
-        fuse_channel : int
-            number of channels in p_fuse
-        num_classes : int
-            number of classes
-        """
+    Parameters
+    ----------
+    fuse_channel : int
+        number of channels in p_fuse
+    num_classes : int
+        number of classes
+    """
+
+    def __init__(self, fuse_channel: int, num_classes: int) -> None:
         super().__init__()
 
         self.conv_1 = nn.Conv2d(
@@ -67,13 +71,27 @@ class SemanticSegmentationClassifier(nn.Module):
     Parameters
     ----------
     p_fuse_channel : int
-        [description]
+        number of channels in feature map p_fuse
+    num_classes: int
+        number of classes, background included
     loss_weights : torch.Tensor, optional
-        [description], by default None
+        weight tensor used in CrossEntropyLoss, by default None
+    loss_1_sample_list: List
+        list of numbers of samples for hard example mining in `L_\{AUX-1\}`, by default None
+    num_hard_positive: int
+        number of hard positive samples for OHEM in `L_\{AUX-2\}`, by default -1
+    num_hard_negative: int
+        number of hard negative samples for OHEM in `L_\{AUX-2\}`, by default -1
     """
 
     def __init__(
-        self, p_fuse_channel: int, num_classes: int, loss_weights: torch.Tensor = None
+        self,
+        p_fuse_channel: int,
+        num_classes: int,
+        loss_weights: torch.Tensor = None,
+        loss_1_sample_list: List = None,
+        num_hard_positive: int = -1,
+        num_hard_negative: int = -1,
     ) -> None:
         super().__init__()
         self.semantic_segmentation_encoder = SemanticSegmentationEncoder(
@@ -81,11 +99,22 @@ class SemanticSegmentationClassifier(nn.Module):
         )
 
         if loss_weights is not None:
-            self.aux_loss_1 = nn.CrossEntropyLoss()
-            self.aux_loss_2 = nn.CrossEntropyLoss(weight=loss_weights)
+            self.aux_loss_1 = CrossEntropyLossRandomSample(
+                sample_list=loss_1_sample_list
+            )
+            self.aux_loss_2 = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive,
+                num_hard_negative=num_hard_negative,
+                weight=loss_weights,
+            )
         else:
-            self.aux_loss_1 = nn.CrossEntropyLoss()
-            self.aux_loss_2 = nn.CrossEntropyLoss()
+            self.aux_loss_1 = CrossEntropyLossRandomSample(
+                sample_list=loss_1_sample_list
+            )
+            self.aux_loss_2 = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive,
+                num_hard_negative=num_hard_negative,
+            )
 
     def forward(
         self,

@@ -6,6 +6,7 @@ from tqdm import tqdm
 from typing import Tuple, Optional, Callable
 
 import numpy as np
+import pandas as pd
 import PIL.Image as Image
 
 import torch
@@ -73,7 +74,7 @@ class SROIEDataset(Dataset):
     ) -> None:
         super().__init__()
 
-        assert os.path.exists(root), "the given root path does not exists"
+        assert os.path.exists(root), f"the given root path {root} does not exists"
         assert tokenizer is not None, "no tokenizer given"
 
         self.root = root
@@ -94,52 +95,28 @@ class SROIEDataset(Dataset):
         dir_img = os.path.join(self.root, "image")
         dir_class = os.path.join(self.root, "class")
         dir_pos_neg = os.path.join(self.root, "pos_neg")
-        dir_ocr_result = os.path.join(self.root, "ocr_result")
+        dir_ocr_result = os.path.join(self.root, "label")
 
         file = self.filename_list[index]
 
         image = Image.open(os.path.join(dir_img, file))
+        if len(image.split()) != 3:
+            image = image.convert('RGB')
 
         data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
 
         pos_neg = np.load(os.path.join(dir_pos_neg, file.replace("jpg", "npy")))
 
-        with open(
-            os.path.join(dir_ocr_result, file.replace("jpg", "csv")),
-            "r",
-            encoding="utf-8",
-        ) as csv_file:
-            data_lines = csv_file.readlines()[1:]
-            self.max_length = (
-                len(data_lines)
-                if (len(data_lines) > self.max_length)
-                else self.max_length
-            )
-            # # debug----------------------------------------------------
-            # curr_ocr_result = [data_line.strip().split(',')[1:]
-            #                     for data_line in data_lines]
-            # if(len(curr_ocr_result) == 0):
-            #     print('\nempty result found in data extraction, please check')
-            #     print(file.replace('.jpg', 'csv'))
-            # # ---------------------------------------------------------
-            ocr_result = [
-                data_line[:-2].strip().split(",")[1:] for data_line in data_lines
-            ]
-
+        ocr_csv_file: pd.DataFrame = pd.read_csv(os.path.join(dir_ocr_result, file.replace("jpg", "csv")))
         ocr_coor = []
         ocr_text = []
-        for item in ocr_result:
-            curr_text = item[4:]
-            # avoid " ' , in ocr recognition results affect list splitting
-            curr_text = "".join(curr_text)
-            curr_text.replace('"', "")
-            if curr_text == "":
-                continue  # discard empty results
-            ocr_coor.append(list(map(int, item[:4])))
-            ocr_text.append(curr_text)
+        for index, row in ocr_csv_file.iterrows():
+            ocr_text.append(row['text'])
+            ocr_coor.append([row['left'], row['top'], row['right'], row['bot']])
 
         ocr_coor_expand = []
         ocr_tokens = []
+        ocr_text_filter = []
         for text, coor in zip(ocr_text, ocr_coor):
             if text == "":
                 continue
@@ -147,30 +124,44 @@ class SROIEDataset(Dataset):
             for i in range(len(curr_tokens)):
                 ocr_coor_expand.append(coor)
                 ocr_tokens.append(curr_tokens[i])
+                if self.train == False:
+                    ocr_text_filter.append(text)
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
-        return (
-            self.transform_img(image),
-            torch.tensor(data_class),
-            torch.tensor(pos_neg),
-            torch.tensor(ocr_coor_expand, dtype=torch.long),
-            torch.tensor(ocr_corpus, dtype=torch.long),
-        )
+        if self.train == True:
+            return (
+                self.transform_img(image),
+                torch.tensor(data_class),
+                torch.tensor(pos_neg),
+                torch.tensor(ocr_coor_expand, dtype=torch.long),
+                torch.tensor(ocr_corpus, dtype=torch.long),
+            )
+        else:
+            return (
+                self.transform_img(image),
+                torch.tensor(data_class),
+                torch.tensor(pos_neg),
+                torch.tensor(ocr_coor_expand, dtype=torch.long),
+                torch.tensor(ocr_corpus, dtype=torch.long),
+                ocr_text_filter,
+            )
 
-    @staticmethod
-    def _ViBERTgrid_coll_func(samples):
+    def _ViBERTgrid_coll_func(self, samples):
         imgs = []
         class_labels = []
         pos_neg_labels = []
         ocr_coors = []
         ocr_corpus = []
+        ocr_text = []
         for item in samples:
             imgs.append(item[0])
             class_labels.append(item[1])
             pos_neg_labels.append(item[2])
             ocr_coors.append(item[3])
             ocr_corpus.append(item[4])
+            if self.train == False:
+                ocr_text.append(item[5])
 
         # pad sequence to generate mini-batch
         ocr_coors = pad_sequence(ocr_coors, batch_first=True)
@@ -179,14 +170,25 @@ class SROIEDataset(Dataset):
         mask = torch.zeros(ocr_corpus.shape, dtype=torch.long)
         mask = mask.masked_fill_((ocr_corpus != 0), 1)
 
-        return (
-            tuple(imgs),
-            tuple(class_labels),
-            tuple(pos_neg_labels),
-            ocr_coors.int(),
-            ocr_corpus,
-            mask.int(),
-        )
+        if self.train == True:
+            return (
+                tuple(imgs),
+                tuple(class_labels),
+                tuple(pos_neg_labels),
+                ocr_coors.int(),
+                ocr_corpus,
+                mask.int(),
+            )
+        else:
+            return (
+                tuple(imgs),
+                tuple(class_labels),
+                tuple(pos_neg_labels),
+                ocr_coors.int(),
+                ocr_corpus,
+                mask.int(),
+                tuple(ocr_text),
+            )
 
     def _extract_train(self, root: str):
         """@Deprecated
@@ -212,6 +214,8 @@ class SROIEDataset(Dataset):
             file: str
 
             image = Image.open(os.path.join(dir_img, file))
+            if len(image.split()) != 3:
+                image = image.convert('RGB')
             img_list.append(image)
 
             data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
@@ -232,12 +236,12 @@ class SROIEDataset(Dataset):
                     else self.max_length
                 )
                 # debug----------------------------------------------------
-                curr_ocr_result = [
-                    data_line.strip().split(",")[1:] for data_line in data_lines
-                ]
-                if len(curr_ocr_result) == 0:
-                    print("\nempty result found in data extraction, please check")
-                    print(file.replace(".jpg", "csv"))
+                # curr_ocr_result = [
+                #     data_line.strip().split(",")[1:] for data_line in data_lines
+                # ]
+                # if len(curr_ocr_result) == 0:
+                #     print("\nempty result found in data extraction, please check")
+                #     print(file.replace(".jpg", "csv"))
                 # ---------------------------------------------------------
                 ocr_result_list.append(
                     [data_line[:-2].strip().split(",")[1:] for data_line in data_lines]
@@ -277,7 +281,7 @@ def load_train_dataset(
 
     """
     dir_train = os.path.join(root, "train")
-    dir_val = os.path.join(root, "validate")
+    dir_val = os.path.join(root, "test")
 
     SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
     SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
@@ -344,10 +348,10 @@ def load_train_dataset_multi_gpu(
 
     """
     dir_train = os.path.join(root, "train")
-    dir_val = os.path.join(root, "validate")
+    dir_val = os.path.join(root, "test")
 
     SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
+    SROIE_val_dataset = SROIEDataset(dir_val, train=True, tokenizer=tokenizer)
 
     train_sampler = distributed.DistributedSampler(SROIE_train_dataset)
     val_sampler = distributed.DistributedSampler(SROIE_val_dataset)
@@ -378,20 +382,20 @@ def load_test_data(
     num_workers: int = 0,
     tokenizer: Optional[Callable] = None,
 ):
-    
     SROIE_test_dataset = SROIEDataset(root=root, train=False, tokenizer=tokenizer)
     test_loader = DataLoader(
         SROIE_test_dataset,
         batch_size=1,
         num_workers=num_workers,
         collate_fn=SROIE_test_dataset._ViBERTgrid_coll_func,
+        shuffle=True,
     )
-    
+
     return test_loader
 
 
 if __name__ == "__main__":
-    dir_processed = r"/media/dplearning/sde/zening/datasets/ICDAR_SROIE/ViBERTgrid_format/no_reshape/"
+    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape"
     model_version = "bert-base-uncased"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
@@ -402,6 +406,8 @@ if __name__ == "__main__":
         tokenizer=tokenizer,
         return_mean_std=True,
     )
+    
+    print(image_mean, image_std)
 
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch

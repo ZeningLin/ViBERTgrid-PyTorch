@@ -211,6 +211,10 @@ def ground_truth_extraction(
             columns=['left', 'top', 'right', 'bot', 'text', 'data_class', 'pos_neg'])
         for line in lines:
             gt_all_info = line.split(',', maxsplit=8)
+            
+            if len(gt_all_info) < 8:
+                continue                # discard invalid lines like '\n' in the labels
+            
             left_coor = int(gt_all_info[0])
             top_coor = int(gt_all_info[1])
             right_coor = int(gt_all_info[4])
@@ -400,10 +404,10 @@ def generate_label(
     return pos_neg_label, class_label
 
 
-def train_data_preprocessing_pipeline(
-    dir_train_img: str,
-    dir_train_bbox: str,
-    dir_train_key: str,
+def data_preprocessing_pipeline(
+    dir_data_img: str,
+    dir_data_bbox: str,
+    dir_data_key: str,
     dir_ocr_result: str,
     dir_pos_neg: str,
     dir_class: str,
@@ -417,11 +421,11 @@ def train_data_preprocessing_pipeline(
 
     Parameters
     ----------
-    dir_train_img : str
-        directory of train image
-    dir_train_bbox : str
+    dir_data_img : str
+        directory of data image
+    dir_data_bbox : str
         directory of ground-turth bbox csv files
-    dir_train_key : str
+    dir_data_key : str
         directory of key information json files
     dir_ocr_result : str
         directory of image ocr result
@@ -442,9 +446,9 @@ def train_data_preprocessing_pipeline(
     """
     num_classes = len(data_classes) + 1
     for file in tqdm.tqdm(file_list):
-        dir_image = os.path.join(dir_train_img, file)
-        dir_bbox = os.path.join(dir_train_bbox, file.replace('jpg', 'csv'))
-        dir_key = os.path.join(dir_train_key, file.replace('jpg', 'json'))
+        dir_image = os.path.join(dir_data_img, file)
+        dir_bbox = os.path.join(dir_data_bbox, file.replace('jpg', 'csv'))
+        dir_key = os.path.join(dir_data_key, file.replace('jpg', 'json'))
         dir_ocr_result_ = os.path.join(
             dir_ocr_result, file.replace('jpg', 'csv'))
         dir_pos_neg_ = os.path.join(dir_pos_neg, file.replace('jpg', 'npy'))
@@ -471,9 +475,9 @@ def train_data_preprocessing_pipeline(
         np.save(dir_class_, class_label)
 
 
-def train_parser(
+def data_parser(
     data_classes: List[str],
-    dir_train_root: str,
+    dir_data_root: str,
     dir_processed: str,
     spilt_word: bool = True,
     cosine_sim_treshold: float = 0.4,
@@ -486,8 +490,8 @@ def train_parser(
     ----------
     data_classes : List[str]
         list of data classes
-    dir_train_root : str
-        root of train data
+    dir_data_root : str
+        root of data
     dir_processed : str
         root of labels
     spilt_word: bool, optional
@@ -497,9 +501,9 @@ def train_parser(
     target_shape : Tuple[int], optional
         shape of the reshaped image, reshape will be applied if not None, by default None
     """
-    dir_train_img = os.path.join(dir_train_root, 'img')
-    dir_train_bbox = os.path.join(dir_train_root, 'box')
-    dir_train_key = os.path.join(dir_train_root, 'key')
+    dir_data_img = os.path.join(dir_data_root, 'img')
+    dir_data_bbox = os.path.join(dir_data_root, 'box')
+    dir_data_key = os.path.join(dir_data_root, 'key')
 
     dir_ocr_result = os.path.join(dir_processed, 'ocr_result')
     if not os.path.exists(dir_ocr_result):
@@ -511,17 +515,17 @@ def train_parser(
     if not os.path.exists(dir_class):
         os.mkdir(dir_class)
 
-    print("preprocessing train dataset")
+    print("preprocessing dataset in dir {}".format(dir_data_root))
 
-    train_list = [f for f in os.listdir(dir_train_img)]
-    train_data_preprocessing_pipeline(
-        dir_train_img=dir_train_img,
-        dir_train_bbox=dir_train_bbox,
-        dir_train_key=dir_train_key,
+    data_list = [f for f in os.listdir(dir_data_img)]
+    data_preprocessing_pipeline(
+        dir_data_img=dir_data_img,
+        dir_data_bbox=dir_data_bbox,
+        dir_data_key=dir_data_key,
         dir_ocr_result=dir_ocr_result,
         dir_pos_neg=dir_pos_neg,
         dir_class=dir_class,
-        file_list=train_list,
+        file_list=data_list,
         data_classes=data_classes,
         spilt_word=spilt_word,
         cosine_sim_treshold=cosine_sim_treshold,
@@ -531,9 +535,9 @@ def train_parser(
     print("process finished")
 
 
-def train_parser_multiprocessing(
+def data_parser_multiprocessing(
     data_classes: List[str],
-    dir_train_root: str,
+    dir_data_root: str,
     dir_processed: str,
     spilt_word: bool = True,
     cosine_sim_treshold: float = 0.4,
@@ -547,8 +551,8 @@ def train_parser_multiprocessing(
     ----------
     data_classes : List[str]
         list of data classes
-    dir_train_root : str
-        root of train data
+    dir_data_root : str
+        root of data data
     dir_processed : str
         root of labels
     spilt_word: bool, optional
@@ -558,9 +562,9 @@ def train_parser_multiprocessing(
     target_shape : Tuple[int], optional
         shape of the reshaped image, reshape will be applied if not None, by default None
     """
-    dir_train_img = os.path.join(dir_train_root, 'img')
-    dir_train_bbox = os.path.join(dir_train_root, 'box')
-    dir_train_key = os.path.join(dir_train_root, 'key')
+    dir_data_img = os.path.join(dir_data_root, 'img')
+    dir_data_bbox = os.path.join(dir_data_root, 'box')
+    dir_data_key = os.path.join(dir_data_root, 'key')
 
     dir_ocr_result = os.path.join(dir_processed, 'ocr_result')
     if not os.path.exists(dir_ocr_result):
@@ -572,10 +576,10 @@ def train_parser_multiprocessing(
     if not os.path.exists(dir_class):
         os.mkdir(dir_class)
 
-    train_list = [f for f in os.listdir(dir_train_img)]
+    data_list = [f for f in os.listdir(dir_data_img)]
 
     num_worker = os.cpu_count() // 2
-    step_length = len(train_list) // num_worker
+    step_length = len(data_list) // num_worker
     processes = []
     start = 0
 
@@ -583,15 +587,15 @@ def train_parser_multiprocessing(
 
     for i in range(num_worker):
         end = (i + 1) * step_length
-        curr_data_list = train_list[start: end] if end < len(
-            train_list) else train_list[start:]
+        curr_data_list = data_list[start: end] if end < len(
+            data_list) else data_list[start:]
         if len(curr_data_list) > 0:
             process = multiprocessing.Process(
-                target=train_data_preprocessing_pipeline,
+                target=data_preprocessing_pipeline,
                 args=(
-                    dir_train_img,
-                    dir_train_bbox,
-                    dir_train_key,
+                    dir_data_img,
+                    dir_data_bbox,
+                    dir_data_key,
                     dir_ocr_result,
                     dir_pos_neg,
                     dir_class,
@@ -620,15 +624,28 @@ def train_parser_multiprocessing(
 if __name__ == '__main__':
     # RESIZE_SHAPE = (336, 256)
     data_classes = ['company', 'date', 'address', 'total']
-    dir_train_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\train_raw'
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape\train'
+    # dir_train_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\train_raw'
+    # dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape\train'
+
+    # if not os.path.exists(dir_processed):
+    #     os.mkdir(dir_processed)
+
+    # data_parser(
+    #     data_classes=data_classes,
+    #     dir_data_root=dir_data_root,
+    #     dir_processed=dir_processed,
+    #     target_shape=None
+    # )
+    
+    dir_test_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\test_raw'
+    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape\test'
 
     if not os.path.exists(dir_processed):
         os.mkdir(dir_processed)
 
-    train_parser(
+    data_parser(
         data_classes=data_classes,
-        dir_train_root=dir_train_root,
+        dir_data_root=dir_test_root,
         dir_processed=dir_processed,
         target_shape=None
     )

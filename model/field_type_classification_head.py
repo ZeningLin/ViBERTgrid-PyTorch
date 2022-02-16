@@ -1,7 +1,9 @@
 import torch
 import torch.nn as nn
 
-from typing import Tuple, Any
+from pipeline.custom_loss import CrossEntropyLossOHEM
+
+from typing import Optional, Tuple, List, Any
 
 
 class ROIEmbedding(nn.Module):
@@ -134,22 +136,35 @@ class FieldTypeClassification(nn.Module):
         number of channels of fuse embeddings
     loss_weights : torch.Tensor, optional
         weights used in CrossEntropyLoss, deal with data imbalance, by default None
+    num_hard_positive: int
+        number of hard positive samples for OHEM in `L_2`, by default -1
+    num_hard_negative: int
+        number of hard negative samples for OHEM in `L_2`, by default -1    
 
     """
 
     def __init__(
-        self, num_classes: int, fuse_embedding_channel: int, loss_weights=None
+        self,
+        num_classes: int,
+        fuse_embedding_channel: int,
+        loss_weights: Optional[List] = None,
+        num_hard_positive: int = -1,
+        num_hard_negative: int = -1,
     ) -> None:
         super().__init__()
         self.classification_net = SingleLayer(
             in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
         )
         if loss_weights is not None:
-            self.field_type_classification_loss = nn.CrossEntropyLoss(
-                weight=loss_weights
+            self.field_type_classification_loss = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive,
+                num_hard_negative=num_hard_negative,
+                weight=loss_weights,
             )
         else:
-            self.field_type_classification_loss = nn.CrossEntropyLoss()
+            self.field_type_classification_loss = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive, num_hard_negative=num_hard_negative
+            )
 
     def forward(
         self,
@@ -226,4 +241,8 @@ class FieldTypeClassification(nn.Module):
         classification_loss_val = self.field_type_classification_loss(
             pred_class, label_class
         )
-        return classification_loss_val, label_class.int(), pred_class.argmax(dim=1).int()
+        return (
+            classification_loss_val,
+            label_class.int(),
+            pred_class.argmax(dim=1).int(),
+        )
