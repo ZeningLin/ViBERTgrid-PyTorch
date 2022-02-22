@@ -268,15 +268,16 @@ def draw_box(
 
 
 if __name__ == "__main__":
-    from data.SROIE_dataset import load_train_dataset
+    from data.SROIE_dataset import load_train_dataset as SROIE_load
+    from data.EPHOIE_dataset import load_train_dataset as EPHOIE_load
     from transformers import BertTokenizer
     from tqdm import tqdm
 
-    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape"
-    model_version = "bert-base-uncased"
+    dir_processed = r"/home/zening_lin@intsig.com/文档/datasets/EPHOIE/"
+    model_version = "bert-base-chinese"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
-    train_loader, val_loader = load_train_dataset(
+    train_loader, val_loader = EPHOIE_load(
         dir_processed, batch_size=4, num_workers=0, tokenizer=tokenizer
     )
 

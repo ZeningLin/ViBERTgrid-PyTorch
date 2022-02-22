@@ -80,8 +80,8 @@ def single_label_parser(
         pos_neg_label = np.zeros(target_shape, dtype=int)
         class_label = np.zeros(target_shape, dtype=int)
     else:
-        pos_neg_label = np.zeros(image_shape, dtype=int)
-        class_label = np.zeros(image_shape, dtype=int)
+        pos_neg_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
+        class_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
 
     csv_label = pd.DataFrame(
         columns=["left", "top", "right", "bot", "text", "data_class", "pos_neg"]
@@ -93,11 +93,14 @@ def single_label_parser(
         for segment in json_label.values():
             num_char = len(segment["string"])
 
-            left_coor = segment["box"][0]
-            top_coor = segment["box"][1]
-            right_coor = segment["box"][2]
-            bot_coor = segment["box"][5]
-            width = left_coor - right_coor
+            hor_candidate = segment["box"][::2]
+            ver_candidate = segment["box"][1::2]
+
+            left_coor = int(min(hor_candidate))
+            top_coor = int(min(ver_candidate))
+            right_coor = int(max(hor_candidate))
+            bot_coor = int(max(ver_candidate))
+            width = right_coor - left_coor
 
             if target_shape is not None:
                 scale_x = target_shape[0] / image_shape[0]
@@ -115,21 +118,21 @@ def single_label_parser(
                 char_pos_neg = 2 if (char_class == 0) else 1
 
                 class_label[top_coor:bot_coor, curr_left:curr_right] = char_class
-                pos_neg_label[top_coor:bot_coor, left_coor:right_coor] = char_pos_neg
+                pos_neg_label[top_coor:bot_coor, curr_left:curr_right] = char_pos_neg
 
                 curr_row_dict = {
-                    "left": curr_left,
-                    "top": top_coor,
-                    "right": curr_right,
-                    "bot": bot_coor,
-                    "text": segment["string"][char_index],
-                    "data_class": char_class,
-                    "pos_neg": char_pos_neg,
+                    "left": [curr_left],
+                    "top": [top_coor],
+                    "right": [curr_right],
+                    "bot": [bot_coor],
+                    "text": [segment["string"][char_index]],
+                    "data_class": [char_class],
+                    "pos_neg": [char_pos_neg],
                 }
-                curr_row_dataframe = pd.DataFrame(
-                    list(curr_row_dict.items())
+                curr_row_dataframe = pd.DataFrame(curr_row_dict)
+                csv_label = pd.concat(
+                    [csv_label, curr_row_dataframe], axis=0, ignore_index=True
                 )
-                csv_label = pd.concat([csv_label, curr_row_dataframe])
 
                 curr_left = curr_right
 
@@ -177,12 +180,12 @@ def data_preprocessing_pipeline(
 
 
 if __name__ == "__main__":
-    image_root = r"dir_to_datasets/EPHOIE/image"
-    txt_label_root = r"dir_to_datasets/EPHOIE/label"
-    json_label_root = r"dir_to_datasets/EPHOIE/_label_json"
-    csv_label_root = r"dir_to_datasets/EPHOIE/_label_csv"
-    class_label_root = r"dir_to_datasets/EPHOIE/_class"
-    pos_neg_label_root = r"dir_to_datasets/EPHOIE/_pos_neg"
+    image_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/image"
+    txt_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/label"
+    json_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_label_json"
+    csv_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_label_csv"
+    class_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_class"
+    pos_neg_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_pos_neg"
 
     if not os.path.exists(json_label_root):
         generate_json(

@@ -158,6 +158,7 @@ class ViBERTgridNet(nn.Module):
             "bert-base-uncased": 768,
             "bert-base-cased": 768,
             "roberta-base": 768,
+            "bert-base-chinese": 768,
         }
         assert (
             bert_model in self.bert_model_list.keys()
