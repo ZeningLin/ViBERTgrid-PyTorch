@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from transformers import BertTokenizer, RobertaTokenizer
 
-from data.SROIE_dataset import load_train_dataset_multi_gpu
+from data.EPHOIE_dataset import load_train_dataset_multi_gpu as EPHOIE_load_train
 from model.ViBERTgrid_net import ViBERTgridNet
 from pipeline.train_val_utils import (
     train_one_epoch,
@@ -36,7 +36,7 @@ def train(args):
 
     device = hyp["device"]
     sync_bn = hyp["syncBN"]
-    
+
     start_epoch = hyp["start_epoch"]
     end_epoch = hyp["end_epoch"]
     batch_size = hyp["batch_size"]
@@ -48,7 +48,7 @@ def train(args):
     momentum_cnn = hyp["optimizer_cnn_hyp"]["momentum"]
     weight_decay_cnn = hyp["optimizer_cnn_hyp"]["weight_decay"]
     min_weight_decay_cnn = hyp["optimizer_cnn_hyp"]["min_weight_decay"]
-    
+
     # # SameOptimizer
     # learning_rate_bert = hyp["optimizer_cnn_hyp"]["learning_rate"]
     # min_learning_rate_bert = hyp["optimizer_cnn_hyp"]["min_learning_rate"]
@@ -94,6 +94,15 @@ def train(args):
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
 
+    num_hard_positive_main = hyp["num_hard_positive_main"]
+    num_hard_negative_main = hyp["num_hard_negative_main"]
+    loss_aux_sample_list = hyp["loss_aux_sample_list"]
+    num_hard_positive_aux = hyp["num_hard_positive_aux"]
+    num_hard_negative_aux = hyp["num_hard_negative_aux"]
+
+    if loss_aux_sample_list is not None:
+        amp = False                     # CrossEntropyLossRandomSample has conflicts with amp mode
+
     device = torch.device(device)
 
     print(f"==> loading tokenizer {bert_version}")
@@ -104,7 +113,7 @@ def train(args):
     print(f"==> tokenizer {bert_version} loaded")
 
     print(f"==> loading datasets")
-    train_loader, val_loader, train_sampler = load_train_dataset_multi_gpu(
+    train_loader, val_loader, train_sampler = EPHOIE_load_train(
         root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,
@@ -131,6 +140,11 @@ def train(args):
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
+        num_hard_positive_main=num_hard_positive_main,
+        num_hard_negative_main=num_hard_negative_main,
+        num_hard_positive_aux=num_hard_positive_aux,
+        num_hard_negative_aux=num_hard_negative_aux,
+        loss_aux_sample_list=loss_aux_sample_list,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -148,11 +162,11 @@ def train(args):
     params_cnn = []
     params_bert = []
     for name, parameters in model.named_parameters():
-        if 'bert_model' in name and parameters.requires_grad:
+        if "bert_model" in name and parameters.requires_grad:
             params_bert.append(parameters)
         elif parameters.requires_grad:
             params_cnn.append(parameters)
-            
+
     optimizer_cnn = torch.optim.SGD(
         params=params_cnn,
         lr=learning_rate_cnn,
@@ -166,14 +180,14 @@ def train(args):
         eps=epsilon_bert,
         weight_decay=weight_decay_bert,
     )
-    
+
     # optimizer_bert = torch.optim.SGD(
     #     params=params_bert,
     #     lr=learning_rate_bert,
     #     momentum=momentum_bert,
     #     weight_decay=weight_decay_bert,
     # )
-    
+
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
     lr_schedule_values_cnn = cosine_scheduler(
@@ -241,7 +255,6 @@ def train(args):
     else:
         print("==> no pretrained")
 
-
     logger = None
     if is_main_process():
         curr_time = time.localtime()
@@ -251,9 +264,10 @@ def train(args):
         curr_time_h += (
             f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
         )
-        comment = comment_exp + \
-            f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}" \
+        comment = (
+            comment_exp + f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}"
             f"_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_time-{curr_time_h}"
+        )
         logger = TensorboardLogger(comment=comment)
         if save_log != "":
             if not os.path.exists(save_log):
@@ -300,10 +314,10 @@ def train(args):
             epoch=epoch,
             logger=logger,
         )
-        
+
         if F1 > top_F1:
             top_F1 = F1
-        
+
         if classification_acc > top_acc:
             top_acc = classification_acc
 
@@ -319,10 +333,18 @@ def train(args):
                     "model": model.state_dict(),
                     "optimizer_cnn": optimizer_cnn.state_dict(),
                     "optimizer_bert": optimizer_bert.state_dict(),
-                    "lr_scheduler_cnn": torch.from_numpy(lr_schedule_values_cnn) if isinstance(lr_schedule_values_cnn, np.ndarray) else lr_schedule_values_cnn.state_dict(),
-                    "weight_decay_scheduler_cnn": torch.from_numpy(wd_schedule_values_cnn),
-                    "lr_scheduler_bert": torch.from_numpy(lr_schedule_values_bert) if isinstance(lr_schedule_values_bert, np.ndarray) else lr_schedule_values_bert.state_dict(),
-                    "weight_decay_scheduler_bert": torch.from_numpy(wd_schedule_values_bert),
+                    "lr_scheduler_cnn": torch.from_numpy(lr_schedule_values_cnn)
+                    if isinstance(lr_schedule_values_cnn, np.ndarray)
+                    else lr_schedule_values_cnn.state_dict(),
+                    "weight_decay_scheduler_cnn": torch.from_numpy(
+                        wd_schedule_values_cnn
+                    ),
+                    "lr_scheduler_bert": torch.from_numpy(lr_schedule_values_bert)
+                    if isinstance(lr_schedule_values_bert, np.ndarray)
+                    else lr_schedule_values_bert.state_dict(),
+                    "weight_decay_scheduler_bert": torch.from_numpy(
+                        wd_schedule_values_bert
+                    ),
                     "args": args,
                     "epoch": epoch,
                 }
@@ -337,7 +359,7 @@ def train(args):
                     save_files,
                     os.path.join(
                         save_top,
-                        f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"\
+                        f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
                         f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
                     ),
                 )
@@ -345,7 +367,7 @@ def train(args):
         if is_main_process():
             if logger is not None:
                 logger.flush()
-    
+
     print(f"top_F1: {top_F1:.4f}  top_acc: {top_acc:.4f}")
 
 

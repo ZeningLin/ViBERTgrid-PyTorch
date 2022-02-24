@@ -1,7 +1,5 @@
 import os
-import warnings
 
-# import pysnooper
 from tqdm import tqdm
 from typing import Tuple, Optional, Callable
 
@@ -16,14 +14,11 @@ from torch.utils.data import distributed, Dataset, DataLoader, BatchSampler
 from transformers import BertTokenizer
 
 
-class SROIEDataset(Dataset):
-    """Dataset for
+class EPHOIEDataset(Dataset):
+    """The EPHOIE dataset
+       
+       can be downloaded from https://github.com/HCIILAB/EPHOIE after application
 
-    The ICDAR 2019 Robust Reading Challenge on Scanned Receipts OCR and Information Extraction,
-    task3: Key Information Extraction
-
-    originally from https://github.com/zzzDavid/ICDAR-2019-SROIE,
-    preprocessed by data_preprocessing.py and data_spilt.py
 
     Parameters
     ----------
@@ -70,7 +65,7 @@ class SROIEDataset(Dataset):
     """
 
     def __init__(
-        self, root: str, train: bool = True, tokenizer: Optional[Callable] = None
+        self, root: str, train: bool, tokenizer: Optional[Callable] = None
     ) -> None:
         super().__init__()
 
@@ -85,34 +80,48 @@ class SROIEDataset(Dataset):
             [torchvision.transforms.ToTensor()]
         )
 
-        dir_img = os.path.join(root, "image")
-        self.filename_list = [f for f in os.listdir(dir_img)]
+        self.filename_list = []
+        if self.train:
+            with open(os.path.join(root, "train.txt"), "r") as f:
+                lines = f.readlines()
+                for line in lines:
+                    self.filename_list.append(line.strip('\n'))
+        else:
+            with open(os.path.join(root, "test.txt"), "r") as f:
+                lines = f.readlines()
+                for line in lines:
+                    self.filename_list.append(line)
 
     def __len__(self) -> int:
         return len(self.filename_list)
 
     def __getitem__(self, index):
-        dir_img = os.path.join(self.root, "image")
-        dir_class = os.path.join(self.root, "class")
-        dir_pos_neg = os.path.join(self.root, "pos_neg")
-        dir_ocr_result = os.path.join(self.root, "label")
+        dir_img = os.path.join(self.root, "image", (self.filename_list[index] + ".jpg"))
+        dir_class = os.path.join(
+            self.root, "_class", (self.filename_list[index] + ".npy")
+        )
+        dir_pos_neg = os.path.join(
+            self.root, "_pos_neg", (self.filename_list[index] + ".npy")
+        )
+        dir_csv_label = os.path.join(
+            self.root, "_label_csv", (self.filename_list[index] + ".csv")
+        )
 
-        file = self.filename_list[index]
-
-        image = Image.open(os.path.join(dir_img, file))
+        image = Image.open(dir_img)
         if len(image.split()) != 3:
-            image = image.convert('RGB')
+            image = image.convert("RGB")
+        data_class = np.load(dir_class)
+        pos_neg = np.load(dir_pos_neg)
 
-        data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
-
-        pos_neg = np.load(os.path.join(dir_pos_neg, file.replace("jpg", "npy")))
-
-        ocr_csv_file: pd.DataFrame = pd.read_csv(os.path.join(dir_ocr_result, file.replace("jpg", "csv")))
         ocr_coor = []
         ocr_text = []
-        for index, row in ocr_csv_file.iterrows():
-            ocr_text.append(row['text'])
-            ocr_coor.append([row['left'], row['top'], row['right'], row['bot']])
+        csv_label: pd.DataFrame = pd.read_csv(dir_csv_label)
+        for _, row in csv_label.iterrows():
+            assert (row["left"] < row["right"]), f"coor error found in {self.filename_list[index]}"
+            assert (row["top"] < row["bot"]), f"coor error found in {self.filename_list[index]}"
+            
+            ocr_text.append(row["text"])
+            ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
 
         ocr_coor_expand = []
         ocr_tokens = []
@@ -187,67 +196,8 @@ class SROIEDataset(Dataset):
                 ocr_coors.int(),
                 ocr_corpus,
                 mask.int(),
-                tuple(ocr_text),
+                # tuple(ocr_text),
             )
-
-    def _extract_train(self, root: str):
-        """@Deprecated
-        Memory exhausted implementation, no longer available
-
-        """
-        warnings.warn("This function is deprecated", DeprecationWarning)
-
-        dir_img = os.path.join(root, "image")
-        dir_class = os.path.join(root, "class")
-        dir_pos_neg = os.path.join(root, "pos_neg")
-        dir_ocr_result = os.path.join(root, "ocr_result")
-
-        filename_list = [f for f in os.listdir(dir_img)]
-
-        img_list = []
-        ocr_result_list = []
-        class_list = []
-        pos_neg_list = []
-
-        print("extracting SROIE train data")
-        for file in tqdm(filename_list):
-            file: str
-
-            image = Image.open(os.path.join(dir_img, file))
-            if len(image.split()) != 3:
-                image = image.convert('RGB')
-            img_list.append(image)
-
-            data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
-            class_list.append(data_class)
-
-            pos_neg = np.load(os.path.join(dir_pos_neg, file.replace("jpg", "npy")))
-            pos_neg_list.append(pos_neg)
-
-            with open(
-                os.path.join(dir_ocr_result, file.replace("jpg", "csv")),
-                "r",
-                encoding="utf-8",
-            ) as csv_file:
-                data_lines = csv_file.readlines()[1:]
-                self.max_length = (
-                    len(data_lines)
-                    if (len(data_lines) > self.max_length)
-                    else self.max_length
-                )
-                # debug----------------------------------------------------
-                # curr_ocr_result = [
-                #     data_line.strip().split(",")[1:] for data_line in data_lines
-                # ]
-                # if len(curr_ocr_result) == 0:
-                #     print("\nempty result found in data extraction, please check")
-                #     print(file.replace(".jpg", "csv"))
-                # ---------------------------------------------------------
-                ocr_result_list.append(
-                    [data_line[:-2].strip().split(",")[1:] for data_line in data_lines]
-                )
-
-        return img_list, np.array(class_list), np.array(pos_neg_list), ocr_result_list
 
 
 def load_train_dataset(
@@ -257,7 +207,7 @@ def load_train_dataset(
     tokenizer: Optional[Callable] = None,
     return_mean_std: bool = False,
 ) -> Tuple[DataLoader]:
-    """load SROIE train dataset
+    """load EPHOIE train dataset
 
     Parameters
     ----------
@@ -280,26 +230,24 @@ def load_train_dataset(
     image_std : numpy.ndarray
 
     """
-    dir_train = os.path.join(root, "train")
-    dir_val = os.path.join(root, "test")
 
-    SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
+    EPHOIE_train_dataset = EPHOIEDataset(root=root, train=True, tokenizer=tokenizer)
+    EPHOIE_val_dataset = EPHOIEDataset(root=root, train=False, tokenizer=tokenizer)
 
     train_loader = DataLoader(
-        SROIE_train_dataset,
+        EPHOIE_train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=SROIE_train_dataset._ViBERTgrid_coll_func,
+        collate_fn=EPHOIE_train_dataset._ViBERTgrid_coll_func,
     )
 
     val_loader = DataLoader(
-        SROIE_val_dataset,
+        EPHOIE_val_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func,
+        collate_fn=EPHOIE_val_dataset._ViBERTgrid_coll_func,
     )
 
     if return_mean_std:
@@ -314,8 +262,8 @@ def load_train_dataset(
                 for d in range(3):
                     image_mean[d] += curr_img[d, :, :].mean()
                     image_std[d] += curr_img[d, :, :].std()
-        image_mean.div_(len(SROIE_train_dataset))
-        image_std.div_(len(SROIE_train_dataset))
+        image_mean.div_(len(EPHOIE_train_dataset))
+        image_std.div_(len(EPHOIE_train_dataset))
 
         return train_loader, val_loader, image_mean.numpy(), image_std.numpy()
 
@@ -328,7 +276,7 @@ def load_train_dataset_multi_gpu(
     num_workers: int = 0,
     tokenizer: Optional[Callable] = None,
 ) -> Tuple[DataLoader]:
-    """load SROIE train dataset in multi-gpu scene
+    """load EPHOIE train dataset in multi-gpu scene
 
     Parameters
     ----------
@@ -347,47 +295,43 @@ def load_train_dataset_multi_gpu(
     val_loader : DataLoader
 
     """
-    dir_train = os.path.join(root, "train")
-    dir_val = os.path.join(root, "test")
+    
+    EPHOIE_train_dataset = EPHOIEDataset(root, train=True, tokenizer=tokenizer)
+    EPHOIE_val_dataset = EPHOIEDataset(root, train=False, tokenizer=tokenizer)
 
-    SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(dir_val, train=True, tokenizer=tokenizer)
-
-    train_sampler = distributed.DistributedSampler(SROIE_train_dataset)
-    val_sampler = distributed.DistributedSampler(SROIE_val_dataset)
+    train_sampler = distributed.DistributedSampler(EPHOIE_train_dataset)
+    val_sampler = distributed.DistributedSampler(EPHOIE_val_dataset)
 
     train_batch_sampler = BatchSampler(
         train_sampler, batch_size=batch_size, drop_last=True
     )
 
     train_loader = DataLoader(
-        SROIE_train_dataset,
+        EPHOIE_train_dataset,
         batch_sampler=train_batch_sampler,
         num_workers=num_workers,
-        collate_fn=SROIE_train_dataset._ViBERTgrid_coll_func,
+        collate_fn=EPHOIE_train_dataset._ViBERTgrid_coll_func,
     )
 
     val_loader = DataLoader(
-        SROIE_val_dataset,
+        EPHOIE_val_dataset,
         sampler=val_sampler,
         num_workers=num_workers,
-        collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func,
+        collate_fn=EPHOIE_val_dataset._ViBERTgrid_coll_func,
     )
 
     return train_loader, val_loader, train_sampler
 
 
 def load_test_data(
-    root: str,
-    num_workers: int = 0,
-    tokenizer: Optional[Callable] = None,
+    root: str, num_workers: int = 0, tokenizer: Optional[Callable] = None,
 ):
-    SROIE_test_dataset = SROIEDataset(root=root, train=False, tokenizer=tokenizer)
+    EPHOIE_test_dataset = EPHOIEDataset(root=root, train=False, tokenizer=tokenizer)
     test_loader = DataLoader(
-        SROIE_test_dataset,
+        EPHOIE_test_dataset,
         batch_size=1,
         num_workers=num_workers,
-        collate_fn=SROIE_test_dataset._ViBERTgrid_coll_func,
+        collate_fn=EPHOIE_test_dataset._ViBERTgrid_coll_func,
         shuffle=True,
     )
 
@@ -396,22 +340,24 @@ def load_test_data(
 
 if __name__ == "__main__":
     dir_processed = r"dir_to_root"
-    model_version = "bert-base-uncased"
+    model_version = "bert-base-chinese"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
-    train_loader, val_loader, image_mean, image_std = load_train_dataset(
+    # train_loader, val_loader, image_mean, image_std = load_train_dataset(
+    train_loader, val_loader = load_train_dataset(
         dir_processed,
         batch_size=4,
         num_workers=0,
         tokenizer=tokenizer,
-        return_mean_std=True,
+        return_mean_std=False,
     )
-    
-    print(image_mean, image_std)
+
+    # print(image_mean, image_std)
 
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch
-        for item in coor:
-            if len(item) == 0:
-                print("empty item found")
-                print(item)
+        print(class_label[0].shape)
+        print(pos_neg[0].shape)
+        print(coor.shape)
+        print(corpus.shape)
+        print(mask.shape)

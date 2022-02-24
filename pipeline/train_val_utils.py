@@ -65,11 +65,11 @@ class TensorboardLogger(object):
 def cosine_scheduler(
     base_value,
     final_value,
-    epoches,
-    niter_per_ep,
-    warmup_epoches=0,
-    start_warmup_value=0,
-    warmup_steps=-1,
+    epoches: int,
+    niter_per_ep: int,
+    warmup_epoches: int = 0,
+    start_warmup_value: int = 0,
+    warmup_steps: int = -1,
 ) -> np.ndarray:
     warmup_schedule = np.array([])
     warmup_iters = warmup_epoches * (niter_per_ep + 1)
@@ -92,7 +92,6 @@ def cosine_scheduler(
 
     schedule = np.concatenate((warmup_schedule, schedule))
 
-    assert len(schedule) == epoches * (niter_per_ep + 1)
     return schedule
 
 
@@ -197,21 +196,33 @@ def train_one_epoch(
         if isinstance(lr_scheduler_cnn, np.ndarray):
             for param_group in optimizer_cnn.param_groups:
                 if lr_scheduler_cnn is not None:
-                    param_group["lr"] = lr_scheduler_cnn[iter_]
+                    if iter_ >= len(lr_scheduler_cnn):
+                        param_group["lr"] = lr_scheduler_cnn[-1]
+                    else:
+                        param_group["lr"] = lr_scheduler_cnn[iter_]
                 if (
                     weight_decay_scheduler_cnn is not None
                     and param_group["weight_decay"] > 0
                 ):
-                    param_group["weight_decay"] = weight_decay_scheduler_cnn[iter_]
+                    if iter_ >= len(weight_decay_scheduler_cnn):
+                        param_group["weight_decay"] = weight_decay_scheduler_cnn[-1]
+                    else:
+                        param_group["weight_decay"] = weight_decay_scheduler_cnn[iter_]
         if isinstance(lr_scheduler_bert, np.ndarray):
             for param_group in optimizer_cnn.param_groups:
                 if lr_scheduler_bert is not None:
-                    param_group["lr"] = lr_scheduler_bert[iter_]
+                    if iter_ >= len(lr_scheduler_bert):
+                        param_group["lr"] = lr_scheduler_bert[-1]
+                    else:
+                        param_group["lr"] = lr_scheduler_bert[iter_]
                 if (
                     weight_decay_scheduler_bert is not None
                     and param_group["weight_decay"] > 0
                 ):
-                    param_group["weight_decay"] = weight_decay_scheduler_bert[iter_]
+                    if iter_ >= len(weight_decay_scheduler_bert):
+                        param_group["weight_decay"] = weight_decay_scheduler_bert[-1]
+                    else:
+                        param_group["weight_decay"] = weight_decay_scheduler_bert[iter_]
 
         (
             image_list,
@@ -264,7 +275,7 @@ def train_one_epoch(
         if torch.cuda.is_available():
             print(
                 log_message.format(
-                    epoch=epoch,
+                    epoch=(epoch + 1),
                     iter=step + 1,
                     train_loss=train_loss_value,
                     iter_time=time_iter,
@@ -274,7 +285,7 @@ def train_one_epoch(
         else:
             print(
                 log_message.format(
-                    epoch=epoch,
+                    epoch=(epoch + 1),
                     iter=step + 1,
                     train_loss=train_loss_value,
                     iter_time=time_iter,
@@ -282,19 +293,24 @@ def train_one_epoch(
             )
 
         if logger is not None:
+            index : int
+            if iter_ >= len(weight_decay_scheduler_cnn):
+                index = -1
+            else:
+                index = iter_
             logger.update(head="loss", train_loss=train_loss_value)
             logger.update(
-                head="opt", weight_decay_cnn=weight_decay_scheduler_cnn[iter_]
+                head="opt", weight_decay_cnn=weight_decay_scheduler_cnn[index]
             )
             logger.update(
-                head="opt", weight_decay_bert=weight_decay_scheduler_bert[iter_]
+                head="opt", weight_decay_bert=weight_decay_scheduler_bert[index]
             )
             if isinstance(lr_scheduler_cnn, np.ndarray):
-                logger.update(head="opt", lr_cnn=lr_scheduler_cnn[iter_])
+                logger.update(head="opt", lr_cnn=lr_scheduler_cnn[index])
             else:
                 logger.update(head="opt", lr_cnn=lr_scheduler_cnn.get_last_lr()[0])
             if isinstance(lr_scheduler_bert, np.ndarray):
-                logger.update(head="opt", lr_bert=lr_scheduler_bert[iter_])
+                logger.update(head="opt", lr_bert=lr_scheduler_bert[index])
             else:
                 logger.update(head="opt", lr_bert=lr_scheduler_bert.get_last_lr()[0])
 
@@ -323,13 +339,7 @@ def validate(
 ):
     num_iter = len(validate_loader)
     start_time = time.time()
-    iter_message = " ".join(
-        [
-            "\t",
-            "epoch[{epoch}]",
-            "iter[{iter}]/[{num_iter}]",
-        ]
-    )
+    iter_message = " ".join(["\t", "epoch[{epoch}]", "iter[{iter}]/[{num_iter}]",])
     log_message = " ".join(
         [
             "\t",
@@ -400,13 +410,7 @@ def validate(
         total_num_entities += num_entities
 
         if iter_msg:
-            print(
-                iter_message.format(
-                    epoch=epoch,
-                    iter=step + 1,
-                    num_iter=num_iter,
-                )
-            )
+            print(iter_message.format(epoch=epoch, iter=step + 1, num_iter=num_iter,))
 
     if device != torch.device("cpu"):
         torch.cuda.synchronize(device)
@@ -423,7 +427,7 @@ def validate(
     time_used = time.time() - start_time
     print(
         log_message.format(
-            epoch=epoch,
+            epoch=(epoch + 1),
             val_loss=validate_loss_value,
             acc=acc,
             precision=precision,
@@ -462,7 +466,7 @@ def inference_once(
     assert (
         len(image_list) == 1
     ), f"batch_size must be 1 in inference mode, {len(image_list)} given"
-    
+
     ocr_text = ocr_text[0]
     orig_ocr_coors = ocr_coors.clone().detach()
 
@@ -489,7 +493,9 @@ def inference_once(
             continue
         if curr_pred_label == 0:
             continue
-        class_result[curr_pred_label.item() - 1].update({curr_text: curr_coor.cpu().numpy().tolist()})
+        class_result[curr_pred_label.item() - 1].update(
+            {curr_text: curr_coor.cpu().numpy().tolist()}
+        )
 
     for item in class_result:
         print(item)
@@ -497,7 +503,7 @@ def inference_once(
     draw_box(
         image=image_list[0],
         boxes_dict_list=class_result,
-        class_list=['company', 'date', 'address', 'total']
+        class_list=["company", "date", "address", "total"],
     )
 
     inference_visualize(
