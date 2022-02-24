@@ -18,7 +18,7 @@ class ViBERTgridNet(nn.Module):
 
     Parameters
     ----------
-    num_classes : int
+    num_classes 
         number of classes in the dataset,
         for example, for SROIE, num_classes=5
     image_mean : float or List[float]
@@ -27,15 +27,15 @@ class ViBERTgridNet(nn.Module):
     image_std : Any
         variance of each channels of the original image,
         used for input normalization
-    image_min_size : int, Tuple[int] or List[int]
+    image_min_size , Tuple[int] or List[int]
         length of the minimum edge after image resize at train mode,
         if tuple or list given, the value will be randomly
         selected from the given values. The original paper
         uses [320, 416, 512, 608, 704].
-    image_max_size : int
+    image_max_size 
         length of the maximum edge after image resize at train mode.
         The original paper uses 800.
-    test_image_min_size : int, optional
+    test_image_min_size , optional
         length of the minimum edge after image resize at eval/test mode, by default 512
     bert_model : str, optional
         pretrained BERT model used for BERT embedding, by default 'bert-base-uncased'
@@ -51,30 +51,30 @@ class ViBERTgridNet(nn.Module):
         'mean' mode average token embeddings from the same word,
         'first' mode take the first token embeddings of a word,
         by default 'mean'
-    early_fusion_downsampling_ratio : int, optional
+    early_fusion_downsampling_ratio , optional
         downsampling ratio of the feature map at early fusion step, by default 8
-    roi_shape : int, optional
+    roi_shape , optional
         shape of the ROIs after ROIAlign, by default 7
-    p_fuse_downsampling_ratio : int, optional
+    p_fuse_downsampling_ratio , optional
         downsampling ratio of the P_fuse feature map, by default 4
     roi_align_output_reshape : bool, optional
         controls output reshape at ROIAlign step.
         If True, output shape = (N, seqLen, C, ROI_H, ROI_W)
         else (N * seqLen, C, output_H, output_W),
         by default False.
-    late_fusion_fuse_embedding_channel : int, optional
+    late_fusion_fuse_embedding_channel , optional
         number of channels at late_fusion_embedding, by default 1024
     loss_weights : None, List or torch.Tensor, optional
         reduce the impact of data class imbalance, used in CrossEntropyLoss, by default None
-    num_hard_positive_main: int
+    num_hard_positive_main
         number of hard positive samples for OHEM in `L_2`, by default -1
-    num_hard_negative_main: int
+    num_hard_negative_main
         number of hard negative samples for OHEM in `L_2`, by default -1
     loss_aux_sample_list: List
         list of numbers of samples for hard example mining in `L_\{AUX-1\}`, by default None
-    num_hard_positive_aux: int
+    num_hard_positive_aux
         number of hard positive samples for OHEM in `L_{AUX-2}`, by default -1
-    num_hard_negative_aux: int
+    num_hard_negative_aux
         number of hard negative samples for OHEM in `L_{AUX-2}`, by default -1
     loss_control_lambda : float, optional
         hyperparameters that controls the ratio of auxiliary loss and classification loss, by default 1
@@ -83,27 +83,27 @@ class ViBERTgridNet(nn.Module):
 
     def __init__(
         self,
-        num_classes: int,
+        num_classes,
         image_mean: Any,
         image_std: Any,
         image_min_size: Any,
-        image_max_size: int,
-        test_image_min_size: int = 512,
+        image_max_size,
+        test_image_min_size=512,
         bert_model: str = "bert-base-uncased",
         tokenizer: Any = None,
         backbone: str = "resnet_18_fpn",
         grid_mode: str = "mean",
-        early_fusion_downsampling_ratio: int = 8,
-        roi_shape: int = 7,
-        p_fuse_downsampling_ratio: int = 4,
+        early_fusion_downsampling_ratio=8,
+        roi_shape=7,
+        p_fuse_downsampling_ratio=4,
         roi_align_output_reshape: bool = False,
-        late_fusion_fuse_embedding_channel: int = 1024,
+        late_fusion_fuse_embedding_channel=1024,
         loss_weights: Any = None,
-        num_hard_positive_main: int = -1,
-        num_hard_negative_main: int = -1,
+        num_hard_positive_main=-1,
+        num_hard_negative_main=-1,
         loss_aux_sample_list: List = None,
-        num_hard_positive_aux: int = -1,
-        num_hard_negative_aux: int = -1,
+        num_hard_positive_aux=-1,
+        num_hard_negative_aux=-1,
         loss_control_lambda: float = 1,
     ) -> None:
         super().__init__()
@@ -352,6 +352,11 @@ if __name__ == "__main__":
         image_max_size=800,
         test_image_min_size=512,
         tokenizer=tokenizer,
+        num_hard_positive_main=2,
+        num_hard_negative_main=2,
+        loss_aux_sample_list=[128, 256, 128],
+        num_hard_positive_aux=2,
+        num_hard_negative_aux=2,
     )
     model = model.to(device)
 

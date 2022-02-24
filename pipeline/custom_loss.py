@@ -54,6 +54,7 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
             label_smoothing=self.label_smoothing,
         )
 
+        mask_list = []
         if self.num_categories == 2 and input.shape[1] >= 2:
             mask_list = [(target == 0), (target != 0)]
         else:
@@ -61,15 +62,17 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
                 self.num_categories == input.shape[1]
             ), f"shape mismatch, number of elements in sample_list must be 2 or equals dimensions \
                 of input, {self.num_categories} and {input.shape[1]} given"
+            for cate_index in range(self.num_categories):
+                mask_list.append(target == cate_index)
 
         for index, mask in enumerate(mask_list):
             curr_sample = self.sample_list[index]
-            curr_loss = ce_loss[mask]
-            num_keep = min(curr_sample, ce_loss[mask].shape[0])
+            curr_loss = ce_loss * mask
+            num_keep = min(curr_sample, curr_loss.shape[0])
             self.num_keep_list.append(num_keep)
 
             if num_keep == curr_sample:
-                keep_index = random.sample(range(int(curr_loss.shape[0])), curr_sample)
+                keep_index = random.sample(range(int(curr_loss.shape[0])), num_keep)
                 keep_index = torch.tensor(keep_index, device=curr_loss.device)
                 keep_loss = curr_loss[keep_index]
             else:
@@ -82,16 +85,16 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
                 (1,), dtype=float, device=self.loss_list[0].device
             )
             for loss in self.loss_list:
-                keep_ce_loss += loss.sum()
+                keep_ce_loss = keep_ce_loss + loss.sum()
         elif self.reduction == "mean":
-            num_keep_total = torch.zeros((1,), dtype=int)
+            num_keep_total = 0
             keep_ce_loss = torch.zeros(
                 (1,), dtype=float, device=self.loss_list[0].device
             )
             for loss, num_keep in zip(self.loss_list, self.num_keep_list):
-                keep_ce_loss += loss.sum()
-                num_keep_total += num_keep
-            keep_ce_loss /= num_keep_total.to(keep_ce_loss.device)
+                keep_ce_loss = keep_ce_loss + loss.sum()
+                num_keep_total = num_keep_total + 1
+            keep_ce_loss /= num_keep_total
         elif self.reduction == "none":
             keep_ce_loss = torch.stack(self.loss_list)
         else:
@@ -142,6 +145,8 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
             reduction="none",
             label_smoothing=self.label_smoothing,
         )
+
+        print(f"[DEBUG] in OHEMLoss {input.shape} {target.shape} {self.weight} {self.ignore_index} {self.label_smoothing} {ce_loss.shape}")
 
         mask = target == 0
         positive_loss = ce_loss[~mask]
