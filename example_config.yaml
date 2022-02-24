@@ -1,0 +1,103 @@
+comment: "  "
+
+device: 'cuda'
+syncBN: True
+
+start_epoch: 0
+end_epoch: 60
+batch_size: 2
+
+optimizer_cnn_hyp: # SGD -> CNN
+ learning_rate: 0.002
+ min_learning_rate: 0.00001
+ warm_up_epoches: 2
+ warm_up_init_lr: 0.00001
+ momentum: 0.9
+ weight_decay: 0.0005
+ min_weight_decay: 0.005
+
+optimizer_bert_hyp: # AdamW -> BERT
+ learning_rate: 0.00002
+ min_learning_rate: 0.0000001
+ warm_up_epoches: 2
+ warm_up_init_lr: 0.0000001
+ beta1: 0.9
+ beta2: 0.999
+ epsilon: 0.00000001
+ weight_decay: 0.01
+ min_weight_decay: 0.01
+
+# SROIE
+# num_hard_positive_main: 16
+# num_hard_negative_main: 16
+# loss_aux_sample_list:
+#  - 128
+#  - 256
+#  - 128
+# num_hard_positive_aux: 256
+# num_hard_negative_aux: 256
+
+# EPHOIE
+num_hard_positive_main: 4
+num_hard_negative_main: 4
+loss_aux_sample_list:
+ - 64
+ - 128
+ - 64
+num_hard_positive_aux: 64
+num_hard_negative_aux: 64
+
+
+save_top: "./weights/"
+save_log: "./log/"
+
+amp: True
+weights: ''
+num_workers: 0
+data_root: "root-to-dir"
+
+# # SROIE
+# num_classes: 5
+# image_mean:
+#  - 0.9248
+#  - 0.9224
+#  - 0.9215
+# image_std:
+#  - 0.1532
+#  - 0.1545
+#  - 0.1536
+
+# EPOHIE
+num_classes: 12
+image_mean:
+ - 0.8913
+ - 0.8958
+ - 0.8906
+image_std:
+ - 0.1421
+ - 0.1436
+ - 0.1420
+
+image_min_size:
+ - 320
+ - 416
+ - 512
+ - 608
+ - 704
+ 
+image_max_size: 800
+test_image_min_size: 512
+
+# bert_version: "bert-base-uncased"  # SROIE
+bert_version: "bert-base-chinese"    # EPHOIE
+backbone: "resnet_18_fpn"
+grid_mode: "mean"
+early_fusion_downsampling_ratio: 8
+roi_shape: 7
+p_fuse_downsampling_ratio: 4
+roi_align_output_reshape: False
+late_fusion_fuse_embedding_channel: 1024
+
+loss_weights: 
+
+loss_control_lambda: 1
