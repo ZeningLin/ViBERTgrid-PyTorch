@@ -273,7 +273,7 @@ if __name__ == "__main__":
     from transformers import BertTokenizer
     from tqdm import tqdm
 
-    dir_processed = r"/home/zening_lin@intsig.com/文档/datasets/EPHOIE/"
+    dir_processed = r"dir_to_processed"
     model_version = "bert-base-chinese"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)

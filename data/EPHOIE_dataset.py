@@ -339,7 +339,7 @@ def load_test_data(
 
 
 if __name__ == "__main__":
-    dir_processed = r"/home/zening_lin@intsig.com/文档/datasets/EPHOIE/"
+    dir_processed = r"dir_to_root"
     model_version = "bert-base-chinese"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)

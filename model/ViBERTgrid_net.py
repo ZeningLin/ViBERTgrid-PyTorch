@@ -338,7 +338,7 @@ if __name__ == "__main__":
     tokenizer = BertTokenizer.from_pretrained(bert_version)
 
     train_loader, val_loader = load_train_dataset(
-        root=r"/media/dplearning/sde/zening/datasets/ICDAR_SROIE/ViBERTgrid_format/no_reshape/",
+        root=r"dir_to_root",
         batch_size=2,
         num_workers=0,
         tokenizer=tokenizer,

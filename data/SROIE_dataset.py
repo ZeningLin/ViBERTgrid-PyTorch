@@ -395,7 +395,7 @@ def load_test_data(
 
 
 if __name__ == "__main__":
-    dir_processed = r"D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape"
+    dir_processed = r"dir_to_root"
     model_version = "bert-base-uncased"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)

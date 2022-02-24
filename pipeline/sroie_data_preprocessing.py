@@ -624,21 +624,22 @@ def data_parser_multiprocessing(
 if __name__ == '__main__':
     # RESIZE_SHAPE = (336, 256)
     data_classes = ['company', 'date', 'address', 'total']
-    # dir_train_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\train_raw'
-    # dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape\train'
 
-    # if not os.path.exists(dir_processed):
-    #     os.mkdir(dir_processed)
+    dir_train_root = r'dir_to_root\ICDAR-SROIE\train_raw'
+    dir_processed = r'dir_to_root\ICDAR-SROIE\train'
 
-    # data_parser(
-    #     data_classes=data_classes,
-    #     dir_data_root=dir_data_root,
-    #     dir_processed=dir_processed,
-    #     target_shape=None
-    # )
+    if not os.path.exists(dir_processed):
+        os.mkdir(dir_processed)
+
+    data_parser(
+        data_classes=data_classes,
+        dir_data_root=dir_train_root,
+        dir_processed=dir_processed,
+        target_shape=None
+    )
     
-    dir_test_root = r'D:\PostGraduate\DataSet\ICDAR-SROIE\test_raw'
-    dir_processed = r'D:\PostGraduate\DataSet\ICDAR-SROIE\ViBERTgrid_format\no_reshape\test'
+    dir_test_root = r'dir_to_root\ICDAR-SROIE\test_raw'
+    dir_processed = r'dir_to_root\ICDAR-SROIE\test'
 
     if not os.path.exists(dir_processed):
         os.mkdir(dir_processed)

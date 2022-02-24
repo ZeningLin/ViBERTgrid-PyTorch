@@ -180,12 +180,12 @@ def data_preprocessing_pipeline(
 
 
 if __name__ == "__main__":
-    image_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/image"
-    txt_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/label"
-    json_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_label_json"
-    csv_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_label_csv"
-    class_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_class"
-    pos_neg_label_root = r"/home/zening_lin@intsig.com/文档/datasets//EPHOIE/_pos_neg"
+    image_root = r"dir_to_root/EPHOIE/image"
+    txt_label_root = r"dir_to_root/EPHOIE/label"
+    json_label_root = r"dir_to_root/EPHOIE/_label_json"
+    csv_label_root = r"dir_to_root/EPHOIE/_label_csv"
+    class_label_root = r"dir_to_root/EPHOIE/_class"
+    pos_neg_label_root = r"dir_to_root/EPHOIE/_pos_neg"
 
     if not os.path.exists(json_label_root):
         generate_json(
