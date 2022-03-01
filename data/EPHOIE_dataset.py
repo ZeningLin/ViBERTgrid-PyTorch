@@ -90,7 +90,7 @@ class EPHOIEDataset(Dataset):
             with open(os.path.join(root, "test.txt"), "r") as f:
                 lines = f.readlines()
                 for line in lines:
-                    self.filename_list.append(line)
+                    self.filename_list.append(line.strip('\n'))
 
     def __len__(self) -> int:
         return len(self.filename_list)
