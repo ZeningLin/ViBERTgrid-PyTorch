@@ -196,7 +196,7 @@ class EPHOIEDataset(Dataset):
                 ocr_coors.int(),
                 ocr_corpus,
                 mask.int(),
-                # tuple(ocr_text),
+                tuple(ocr_text),
             )
 
 

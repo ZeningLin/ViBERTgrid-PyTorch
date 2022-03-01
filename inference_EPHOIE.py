@@ -6,6 +6,7 @@ from transformers import BertTokenizer, RobertaTokenizer
 
 from model.ViBERTgrid_net import ViBERTgridNet
 from data.SROIE_dataset import load_test_data
+from data.EPHOIE_dataset import load_test_data
 from pipeline.train_val_utils import inference_once
 
 

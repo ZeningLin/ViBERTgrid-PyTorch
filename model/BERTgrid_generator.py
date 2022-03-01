@@ -175,7 +175,7 @@ class BERTgridGenerator(nn.Module):
 
             # initialize coors with [-1, -1, -1, -1] to match first coor
             prev_coors = torch.ones(
-                (coors.shape[2]), dtype=torch.long, device=device)
+                (coors.shape[2]), dtype=torch.int, device=device)
             prev_coors *= -1
             if self.grid_mode == 'mean':
                 mean_count = 1
