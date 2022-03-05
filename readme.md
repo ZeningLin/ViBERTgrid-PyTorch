@@ -77,7 +77,7 @@ Under Construction
 |SROIE|original paper, RoBERTa-Base|147M|-|-|96.40|
 |SROIE|BERT-Base uncased|141M|94.43|97.03|95.71|
 |SROIE|RoBERTa-Base uncased|146M|-|-|-|
-|EPHOIE|BERT-Base chinese|-|-|-|-|
+|EPHOIE|BERT-Base chinese|-|-|-|97.41|
 
 
 ## Differences in this reimplementation
