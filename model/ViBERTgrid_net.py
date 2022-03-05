@@ -1,7 +1,14 @@
 import torch
 import torch.nn as nn
 
-from transformers import BertModel, BertTokenizer, RobertaTokenizer, RobertaModel
+from transformers import (
+    BertModel,
+    BertTokenizer,
+    BertConfig,
+    RobertaTokenizer,
+    RobertaModel,
+    RobertaConfig,
+)
 
 from typing import Tuple, List, Any
 
@@ -18,7 +25,7 @@ class ViBERTgridNet(nn.Module):
 
     Parameters
     ----------
-    num_classes 
+    num_classes
         number of classes in the dataset,
         for example, for SROIE, num_classes=5
     image_mean : float or List[float]
@@ -32,7 +39,7 @@ class ViBERTgridNet(nn.Module):
         if tuple or list given, the value will be randomly
         selected from the given values. The original paper
         uses [320, 416, 512, 608, 704].
-    image_max_size 
+    image_max_size
         length of the maximum edge after image resize at train mode.
         The original paper uses 800.
     test_image_min_size , optional
@@ -191,9 +198,11 @@ class ViBERTgridNet(nn.Module):
         else:
             print("in evaluation mode, no pretrained will be loaded")
             if "bert-" in bert_model:
-                self.bert_model = BertModel()
+                self.bert_config = BertConfig()
+                self.bert_model = BertModel(self.bert_config)
             elif "roberta-" in bert_model:
-                self.bert_model = RobertaModel()
+                self.bert_config = RobertaConfig()
+                self.bert_model = RobertaModel(self.bert_config)
 
         # backbone stuff
         self.backbone_list = ["resnet_18_fpn"]
