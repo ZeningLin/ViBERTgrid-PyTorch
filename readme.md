@@ -77,7 +77,7 @@ Under Construction
 |SROIE|original paper, RoBERTa-Base|147M|-|-|96.40|
 |SROIE|BERT-Base uncased|141M|94.43|97.03|95.71|
 |SROIE|RoBERTa-Base uncased|146M|-|-|-|
-|EPHOIE|BERT-Base chinese|-|-|-|-|
+|EPHOIE|BERT-Base chinese|-|-|-|97.41|
 
 
 ## Differences in this reimplementation
@@ -86,4 +86,5 @@ Under Construction
 ## Note and Implementation Details
 - Due to source limitations, I used 2 NVIDIA TITAN X for training, which can only afford a batch size of 4 (2 on each GPU). The loss curve is not stable in this situation and may affect the performance.
 - OHEM does not help in the case of small batch size, as it tends to back propagate local hard samples inside a batch, not global hard samples.
-- My implementation of random sampling in auxiliary semantic segmentation head is not capable with `torch.amp`. `amp` will be disabled when a random sampling list is detected.
+- My implementation of random sampling in auxiliary semantic segmentation head is not capatible with `torch.amp`. `amp` will be disabled when a random sampling list is detected.
+

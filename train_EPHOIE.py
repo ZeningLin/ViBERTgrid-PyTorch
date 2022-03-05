@@ -36,7 +36,7 @@ def train(args):
 
     device = hyp["device"]
     sync_bn = hyp["syncBN"]
-
+    
     start_epoch = hyp["start_epoch"]
     end_epoch = hyp["end_epoch"]
     batch_size = hyp["batch_size"]
@@ -49,15 +49,6 @@ def train(args):
     weight_decay_cnn = hyp["optimizer_cnn_hyp"]["weight_decay"]
     min_weight_decay_cnn = hyp["optimizer_cnn_hyp"]["min_weight_decay"]
 
-    # # SameOptimizer
-    # learning_rate_bert = hyp["optimizer_cnn_hyp"]["learning_rate"]
-    # min_learning_rate_bert = hyp["optimizer_cnn_hyp"]["min_learning_rate"]
-    # warm_up_epoches_bert = hyp["optimizer_cnn_hyp"]["warm_up_epoches"]
-    # warm_up_init_lr_bert = hyp["optimizer_cnn_hyp"]["warm_up_init_lr"]
-    # momentum_bert = hyp["optimizer_cnn_hyp"]["momentum"]
-    # weight_decay_bert = hyp["optimizer_cnn_hyp"]["weight_decay"]
-    # min_weight_decay_bert = hyp["optimizer_cnn_hyp"]["min_weight_decay"]
-
     learning_rate_bert = hyp["optimizer_bert_hyp"]["learning_rate"]
     min_learning_rate_bert = hyp["optimizer_bert_hyp"]["min_learning_rate"]
     warm_up_epoches_bert = hyp["optimizer_bert_hyp"]["warm_up_epoches"]
@@ -67,6 +58,12 @@ def train(args):
     epsilon_bert = hyp["optimizer_bert_hyp"]["epsilon"]
     weight_decay_bert = hyp["optimizer_bert_hyp"]["weight_decay"]
     min_weight_decay_bert = hyp["optimizer_bert_hyp"]["min_weight_decay"]
+
+    num_hard_positive_main = hyp["num_hard_positive_main"]
+    num_hard_negative_main = hyp["num_hard_negative_main"]
+    loss_aux_sample_list = hyp["loss_aux_sample_list"]
+    num_hard_positive_aux = hyp["num_hard_positive_aux"]
+    num_hard_negative_aux = hyp["num_hard_negative_aux"]
 
     save_top = hyp["save_top"]
     save_log = hyp["save_log"]
@@ -93,15 +90,6 @@ def train(args):
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
-
-    num_hard_positive_main = hyp["num_hard_positive_main"]
-    num_hard_negative_main = hyp["num_hard_negative_main"]
-    loss_aux_sample_list = hyp["loss_aux_sample_list"]
-    num_hard_positive_aux = hyp["num_hard_positive_aux"]
-    num_hard_negative_aux = hyp["num_hard_negative_aux"]
-
-    if loss_aux_sample_list is not None:
-        amp = False                     # CrossEntropyLossRandomSample has conflicts with amp mode
 
     device = torch.device(device)
 
@@ -162,11 +150,11 @@ def train(args):
     params_cnn = []
     params_bert = []
     for name, parameters in model.named_parameters():
-        if "bert_model" in name and parameters.requires_grad:
+        if 'bert_model' in name and parameters.requires_grad:
             params_bert.append(parameters)
         elif parameters.requires_grad:
             params_cnn.append(parameters)
-
+            
     optimizer_cnn = torch.optim.SGD(
         params=params_cnn,
         lr=learning_rate_cnn,
@@ -180,30 +168,14 @@ def train(args):
         eps=epsilon_bert,
         weight_decay=weight_decay_bert,
     )
-
-    # optimizer_bert = torch.optim.SGD(
-    #     params=params_bert,
-    #     lr=learning_rate_bert,
-    #     momentum=momentum_bert,
-    #     weight_decay=weight_decay_bert,
-    # )
-
+    
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
-    lr_schedule_values_cnn = cosine_scheduler(
-        base_value=learning_rate_cnn,
-        final_value=min_learning_rate_cnn,
-        epoches=end_epoch,
-        niter_per_ep=num_training_steps_per_epoch,
-        warmup_epoches=warm_up_epoches_cnn,
-        start_warmup_value=warm_up_init_lr_cnn,
-        warmup_steps=-1,
+    lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
+        optimizer=optimizer_cnn,
+        step_size = 20,
+        gamma = 0.1
     )
-    # lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
-    #     optimizer=optimizer_cnn,
-    #     step_size = 40,
-    #     gamma = 0.1
-    # )
     wd_schedule_values_cnn = cosine_scheduler(
         base_value=weight_decay_cnn,
         final_value=min_weight_decay_cnn,
@@ -211,20 +183,11 @@ def train(args):
         niter_per_ep=num_training_steps_per_epoch,
     )
 
-    lr_schedule_values_bert = cosine_scheduler(
-        base_value=learning_rate_bert,
-        final_value=min_learning_rate_bert,
-        epoches=end_epoch,
-        niter_per_ep=num_training_steps_per_epoch,
-        warmup_epoches=warm_up_epoches_bert,
-        start_warmup_value=warm_up_init_lr_bert,
-        warmup_steps=-1,
+    lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
+        optimizer=optimizer_bert,
+        step_size = 50,
+        gamma = 0.1
     )
-    # lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
-    #     optimizer=optimizer_bert,
-    #     step_size = 50,
-    #     gamma = 0.1
-    # )
     wd_schedule_values_bert = cosine_scheduler(
         base_value=weight_decay_bert,
         final_value=min_weight_decay_bert,
@@ -255,6 +218,7 @@ def train(args):
     else:
         print("==> no pretrained")
 
+
     logger = None
     if is_main_process():
         curr_time = time.localtime()
@@ -264,10 +228,9 @@ def train(args):
         curr_time_h += (
             f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
         )
-        comment = (
-            comment_exp + f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}"
+        comment = comment_exp + \
+            f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}" \
             f"_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_time-{curr_time_h}"
-        )
         logger = TensorboardLogger(comment=comment)
         if save_log != "":
             if not os.path.exists(save_log):
@@ -280,7 +243,7 @@ def train(args):
             )
 
     top_acc = 0
-    top_F1_tresh = 0.92
+    top_F1_tresh = 0.97
     top_F1 = 0
     print(f"==> start training")
     for epoch in range(start_epoch, end_epoch):
@@ -314,10 +277,10 @@ def train(args):
             epoch=epoch,
             logger=logger,
         )
-
+        
         if F1 > top_F1:
             top_F1 = F1
-
+        
         if classification_acc > top_acc:
             top_acc = classification_acc
 
@@ -333,18 +296,10 @@ def train(args):
                     "model": model.state_dict(),
                     "optimizer_cnn": optimizer_cnn.state_dict(),
                     "optimizer_bert": optimizer_bert.state_dict(),
-                    "lr_scheduler_cnn": torch.from_numpy(lr_schedule_values_cnn)
-                    if isinstance(lr_schedule_values_cnn, np.ndarray)
-                    else lr_schedule_values_cnn.state_dict(),
-                    "weight_decay_scheduler_cnn": torch.from_numpy(
-                        wd_schedule_values_cnn
-                    ),
-                    "lr_scheduler_bert": torch.from_numpy(lr_schedule_values_bert)
-                    if isinstance(lr_schedule_values_bert, np.ndarray)
-                    else lr_schedule_values_bert.state_dict(),
-                    "weight_decay_scheduler_bert": torch.from_numpy(
-                        wd_schedule_values_bert
-                    ),
+                    "lr_scheduler_cnn": torch.from_numpy(lr_schedule_values_cnn) if isinstance(lr_schedule_values_cnn, np.ndarray) else lr_schedule_values_cnn.state_dict(),
+                    "weight_decay_scheduler_cnn": torch.from_numpy(wd_schedule_values_cnn),
+                    "lr_scheduler_bert": torch.from_numpy(lr_schedule_values_bert) if isinstance(lr_schedule_values_bert, np.ndarray) else lr_schedule_values_bert.state_dict(),
+                    "weight_decay_scheduler_bert": torch.from_numpy(wd_schedule_values_bert),
                     "args": args,
                     "epoch": epoch,
                 }
@@ -359,7 +314,7 @@ def train(args):
                     save_files,
                     os.path.join(
                         save_top,
-                        f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
+                        f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"\
                         f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
                     ),
                 )
@@ -367,7 +322,7 @@ def train(args):
         if is_main_process():
             if logger is not None:
                 logger.flush()
-
+    
     print(f"top_F1: {top_F1:.4f}  top_acc: {top_acc:.4f}")
 
 

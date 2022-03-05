@@ -4,6 +4,7 @@ import torchvision.transforms
 import numpy as np
 import matplotlib.pyplot as plt
 import PIL
+import PIL.Image
 import PIL.ImageDraw as ImageDraw
 import PIL.ImageFont as ImageFont
 
@@ -212,7 +213,7 @@ def draw_box(
     line_thickness: int = 4,
 ):
     assert isinstance(
-        image, (PIL.Image, torch.Tensor)
+        image, (PIL.Image.Image, torch.Tensor)
     ), f"image must be PIL.Image or torch.Tensor, {type(image)} given"
 
     if isinstance(image, torch.Tensor):

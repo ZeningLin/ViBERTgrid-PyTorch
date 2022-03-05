@@ -1,4 +1,4 @@
-*/__pycache__
+__pycache__/
 
 .vscode/
 .idea/
@@ -7,6 +7,7 @@ runs/
 weights/
 config/
 log/
+traced/
 
 private_*
 private/

@@ -18,6 +18,23 @@ from pipeline.criteria import (
 )
 from utils.ViBERTgrid_visualize import inference_visualize, draw_box
 
+SROIE_CLASS_LIST = ["company", "date", "address", "total"]
+
+EPHOIE_CLASS_LIST = [
+    "其他",
+    "年级",
+    "科目",
+    "学校",
+    "考试时间",
+    "班级",
+    "姓名",
+    "考号",
+    "分数",
+    "座号",
+    "学号",
+    "准考证号",
+]
+
 
 class TerminalLogger(object):
     def __init__(self, filename, stream=sys.stdout):
@@ -293,7 +310,7 @@ def train_one_epoch(
             )
 
         if logger is not None:
-            index : int
+            index: int
             if iter_ >= len(weight_decay_scheduler_cnn):
                 index = -1
             else:
@@ -366,6 +383,7 @@ def validate(
             ocr_coors,
             ocr_corpus,
             mask,
+            _
         ) = validate_batch
 
         image_list = tuple(image.to(device) for image in image_list)
@@ -501,9 +519,7 @@ def inference_once(
         print(item)
 
     draw_box(
-        image=image_list[0],
-        boxes_dict_list=class_result,
-        class_list=["company", "date", "address", "total"],
+        image=image_list[0], boxes_dict_list=class_result, class_list=EPHOIE_CLASS_LIST,
     )
 
     inference_visualize(
