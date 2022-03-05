@@ -87,3 +87,4 @@ Under Construction
 - Due to source limitations, I used 2 NVIDIA TITAN X for training, which can only afford a batch size of 4 (2 on each GPU). The loss curve is not stable in this situation and may affect the performance.
 - OHEM does not help in the case of small batch size, as it tends to back propagate local hard samples inside a batch, not global hard samples.
 - My implementation of random sampling in auxiliary semantic segmentation head is not capatible with `torch.amp`. `amp` will be disabled when a random sampling list is detected.
+
