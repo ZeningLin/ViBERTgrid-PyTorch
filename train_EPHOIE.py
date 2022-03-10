@@ -229,7 +229,7 @@ def train(args):
             f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
         )
         comment = comment_exp + \
-            f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}" \
+            f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_bs-{batch_size}" \
             f"_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_time-{curr_time_h}"
         logger = TensorboardLogger(comment=comment)
         if save_log != "":
@@ -315,7 +315,7 @@ def train(args):
                     os.path.join(
                         save_top,
                         f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"\
-                        f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
+                        f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
                     ),
                 )
 

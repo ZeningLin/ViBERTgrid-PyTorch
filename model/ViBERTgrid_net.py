@@ -166,6 +166,8 @@ class ViBERTgridNet(nn.Module):
             "bert-base-cased": 768,
             "roberta-base": 768,
             "bert-base-chinese": 768,
+            "hfl/chinese-bert-wwm-ext": 768,
+            "hfl/chinese-bert-wwm": 768,
         }
         assert (
             bert_model in self.bert_model_list.keys()
@@ -173,17 +175,7 @@ class ViBERTgridNet(nn.Module):
         self.bert_hidden_size = self.bert_model_list[bert_model]
         if self.training:
             print("loading pretrained")
-            if "bert-" in bert_model:
-                if tokenizer is None:
-                    self.tokenizer = BertTokenizer.from_pretrained(bert_model)
-                elif isinstance(tokenizer, BertTokenizer):
-                    self.tokenizer = tokenizer
-                else:
-                    raise ValueError(
-                        "invalid value of parameter tokenizer, must be None or callable BertTokenizer"
-                    )
-                self.bert_model = BertModel.from_pretrained(bert_model)
-            elif "roberta-" in bert_model:
+            if "roberta-" in bert_model:
                 if tokenizer is None:
                     self.tokenizer = RobertaTokenizer.from_pretrained(bert_model)
                 elif isinstance(tokenizer, RobertaTokenizer):
@@ -193,6 +185,16 @@ class ViBERTgridNet(nn.Module):
                         "invalid value of parameter tokenizer, must be None or callable RobertaTokenizer"
                     )
                 self.bert_model = RobertaModel.from_pretrained(bert_model)
+            elif "bert-" in bert_model:
+                if tokenizer is None:
+                    self.tokenizer = BertTokenizer.from_pretrained(bert_model)
+                elif isinstance(tokenizer, BertTokenizer):
+                    self.tokenizer = tokenizer
+                else:
+                    raise ValueError(
+                        "invalid value of parameter tokenizer, must be None or callable BertTokenizer"
+                    )
+                self.bert_model = BertModel.from_pretrained(bert_model)
             else:
                 raise ValueError("no tokenizer and bert model loaded")
         else:
