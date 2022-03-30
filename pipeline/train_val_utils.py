@@ -243,29 +243,25 @@ def train_one_epoch(
 
         (
             image_list,
-            class_labels,
-            pos_neg_labels,
+            seg_indices,
+            token_classes,
             ocr_coors,
             ocr_corpus,
             mask,
         ) = train_batch
 
         image_list = tuple(image.to(device) for image in image_list)
-        class_labels = tuple(class_label.to(device) for class_label in class_labels)
-        pos_neg_labels = tuple(
-            pos_neg_label.to(device) for pos_neg_label in pos_neg_labels
-        )
+        seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
+        token_classes = tuple(token_class.to(device) for token_class in token_classes)
         ocr_coors = ocr_coors.to(device)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
         with torch.cuda.amp.autocast(enabled=scaler is not None):
             train_loss = model(
-                image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+                image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
             )
 
-        # torch.distributed.barrier()
-        # train_loss = reduce_loss(train_loss)
         train_loss_value = train_loss.item()
         mean_train_loss = (mean_train_loss * step + train_loss_value) / (step + 1)
 
@@ -356,7 +352,13 @@ def validate(
 ):
     num_iter = len(validate_loader)
     start_time = time.time()
-    iter_message = " ".join(["\t", "epoch[{epoch}]", "iter[{iter}]/[{num_iter}]",])
+    iter_message = " ".join(
+        [
+            "\t",
+            "epoch[{epoch}]",
+            "iter[{iter}]/[{num_iter}]",
+        ]
+    )
     log_message = " ".join(
         [
             "\t",
@@ -378,25 +380,23 @@ def validate(
     for step, validate_batch in enumerate(validate_loader):
         (
             image_list,
-            class_labels,
-            pos_neg_labels,
+            seg_indices,
+            token_classes,
             ocr_coors,
             ocr_corpus,
             mask,
-            _
+            _,
         ) = validate_batch
 
         image_list = tuple(image.to(device) for image in image_list)
-        class_labels = tuple(class_label.to(device) for class_label in class_labels)
-        pos_neg_labels = tuple(
-            pos_neg_label.to(device) for pos_neg_label in pos_neg_labels
-        )
+        seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
+        token_classes = tuple(token_class.to(device) for token_class in token_classes)
         ocr_coors = ocr_coors.to(device)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
         validate_loss, _, _, gt_label, pred_label = model(
-            image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
 
         validate_loss = reduce_loss(validate_loss)
@@ -428,7 +428,13 @@ def validate(
         total_num_entities += num_entities
 
         if iter_msg:
-            print(iter_message.format(epoch=epoch, iter=step + 1, num_iter=num_iter,))
+            print(
+                iter_message.format(
+                    epoch=epoch,
+                    iter=step + 1,
+                    num_iter=num_iter,
+                )
+            )
 
     if device != torch.device("cpu"):
         torch.cuda.synchronize(device)
@@ -519,7 +525,9 @@ def inference_once(
         print(item)
 
     draw_box(
-        image=image_list[0], boxes_dict_list=class_result, class_list=EPHOIE_CLASS_LIST,
+        image=image_list[0],
+        boxes_dict_list=class_result,
+        class_list=EPHOIE_CLASS_LIST,
     )
 
     inference_visualize(

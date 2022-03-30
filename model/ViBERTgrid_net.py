@@ -15,9 +15,12 @@ from typing import Tuple, List, Any
 from model.BERTgrid_generator import BERTgridGenerator
 from model.grid_roi_align import GridROIAlign
 from model.ResNetFPN_ViBERTgrid import resnet_18_fpn
-from model.field_type_classification_head import FieldTypeClassification, LateFusion
+from model.field_type_classification_head import (
+    FieldTypeClassificationSimplified,
+    LateFusion,
+)
 from model.semantic_segmentation_head import SemanticSegmentationClassifier
-from pipeline.transform import GeneralizedViBERTgridTransform
+from pipeline.transform import GeneralizedViBERTgridTransform, ImageList
 
 
 class ViBERTgridNet(nn.Module):
@@ -106,8 +109,10 @@ class ViBERTgridNet(nn.Module):
         roi_align_output_reshape: bool = False,
         late_fusion_fuse_embedding_channel=1024,
         loss_weights: Any = None,
-        num_hard_positive_main=-1,
-        num_hard_negative_main=-1,
+        num_hard_positive_main_1=-1,
+        num_hard_negative_main_1=-1,
+        num_hard_positive_main_2=-1,
+        num_hard_negative_main_2=-1,
         loss_aux_sample_list: List = None,
         num_hard_positive_aux=-1,
         num_hard_negative_aux=-1,
@@ -157,7 +162,6 @@ class ViBERTgridNet(nn.Module):
             train_min_size=self.image_min_size,
             test_min_size=self.test_image_min_size,
             max_size=self.image_max_size,
-            num_classes=self.num_classes,
         )
 
         # bert-model stuff
@@ -265,11 +269,13 @@ class ViBERTgridNet(nn.Module):
             roi_channel=self.p_fuse_channel,
             roi_shape=self.roi_shape,
         )
-        self.field_type_classification_head = FieldTypeClassification(
+        self.field_type_classification_head = FieldTypeClassificationSimplified(
             num_classes=self.num_classes,
             fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
-            num_hard_positive=num_hard_positive_main,
-            num_hard_negative=num_hard_negative_main,
+            num_hard_positive_1=num_hard_positive_main_1,
+            num_hard_negative_1=num_hard_negative_main_1,
+            num_hard_positive_2=num_hard_positive_main_2,
+            num_hard_negative_2=num_hard_negative_main_2,
             loss_weights=self.loss_weights,
         )
 
@@ -295,22 +301,21 @@ class ViBERTgridNet(nn.Module):
     def forward(
         self,
         image: Tuple[torch.Tensor],
-        class_labels: Tuple[torch.Tensor],
-        pos_neg_labels: Tuple[torch.Tensor],
+        seg_indices: Tuple[torch.Tensor],
+        token_classes: Tuple[torch.Tensor],
         coors: torch.Tensor,
         corpus: torch.Tensor,
         mask: torch.Tensor,
     ):
-
-        image_list, class_labels_, pos_neg_labels_, coors_ = self.transform(
-            image, class_labels, pos_neg_labels, coors
-        )
+        image_list: ImageList
+        coors: torch.Tensor
+        image_list, coors = self.transform(image, coors)
 
         image_shape = image_list.tensors.shape[-2:]
 
         # generate BERTgrid
         BERT_embeddings, BERTgrid_embeddings = self.BERTgrid_generator(
-            image_shape, corpus, mask, coors_
+            image_shape, corpus, mask, coors
         )
 
         # encode orig image, early fusion
@@ -318,17 +323,17 @@ class ViBERTgridNet(nn.Module):
 
         # Auxiliary Semantic Segmentation Head
         loss_aux, pred_mask, pred_ss = self.semantic_segmentation_head(
-            p_fuse_features, pos_neg_labels_, class_labels_
+            p_fuse_features, seg_indices, token_classes, coors
         )
 
         # Word-level Field Type Classification Head
         # roi align
-        roi_features = self.grid_roi_align_net(p_fuse_features, coors_, None)
+        roi_features = self.grid_roi_align_net(p_fuse_features, coors, None)
         # late fusion
         late_fuse_embeddings = self.late_fusion_net(roi_features, BERT_embeddings)
         # field type classification
         loss_c, gt_label, pred_label = self.field_type_classification_head(
-            late_fuse_embeddings, coors_, mask, class_labels_
+            late_fuse_embeddings, mask.long(), token_classes
         )
 
         total_loss = loss_c + self.loss_control_lambda * loss_aux
@@ -340,8 +345,14 @@ class ViBERTgridNet(nn.Module):
 
 
 if __name__ == "__main__":
+    import argparse
+
     from transformers import BertTokenizer, BertModel
     from data.SROIE_dataset import load_train_dataset
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root", type=str, help="dir to data root")
+    args = parser.parse_args()
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     bert_version = "bert-base-cased"
@@ -349,7 +360,7 @@ if __name__ == "__main__":
     tokenizer = BertTokenizer.from_pretrained(bert_version)
 
     train_loader, val_loader = load_train_dataset(
-        root=r"dir_to_root",
+        root=args.root,
         batch_size=2,
         num_workers=0,
         tokenizer=tokenizer,
@@ -363,8 +374,10 @@ if __name__ == "__main__":
         image_max_size=800,
         test_image_min_size=512,
         tokenizer=tokenizer,
-        num_hard_positive_main=2,
-        num_hard_negative_main=2,
+        num_hard_positive_main_1=2,
+        num_hard_negative_main_1=2,
+        num_hard_positive_main_2=2,
+        num_hard_negative_main_2=2,
         loss_aux_sample_list=[128, 256, 128],
         num_hard_positive_aux=2,
         num_hard_negative_aux=2,
@@ -372,24 +385,24 @@ if __name__ == "__main__":
     model = model.to(device)
 
     train_batch = next(iter(train_loader))
-    image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask = train_batch
+    image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask = train_batch
     image_list = tuple(image.to(device) for image in image_list)
-    class_labels = tuple(class_label.to(device) for class_label in class_labels)
-    pos_neg_labels = tuple(pos_neg_label.to(device) for pos_neg_label in pos_neg_labels)
+    seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
+    token_classes = tuple(pos_neg_label.to(device) for pos_neg_label in token_classes)
     ocr_coors = ocr_coors.to(device)
     ocr_corpus = ocr_corpus.to(device)
     mask = mask.to(device)
 
     model.train()
     total_loss = model(
-        image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+        image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
     )
 
     total_loss.backward()
 
     model.eval()
     total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
-        image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+        image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
     )
 
     print("debug finished, total_loss = {}".format(total_loss.item()))

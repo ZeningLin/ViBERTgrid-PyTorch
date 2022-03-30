@@ -93,37 +93,41 @@ class SROIEDataset(Dataset):
 
     def __getitem__(self, index):
         dir_img = os.path.join(self.root, "image")
-        dir_class = os.path.join(self.root, "class")
-        dir_pos_neg = os.path.join(self.root, "pos_neg")
         dir_ocr_result = os.path.join(self.root, "label")
 
         file = self.filename_list[index]
 
         image = Image.open(os.path.join(dir_img, file))
         if len(image.split()) != 3:
-            image = image.convert('RGB')
+            image = image.convert("RGB")
 
-        data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
-
-        pos_neg = np.load(os.path.join(dir_pos_neg, file.replace("jpg", "npy")))
-
-        ocr_csv_file: pd.DataFrame = pd.read_csv(os.path.join(dir_ocr_result, file.replace("jpg", "csv")))
+        ocr_csv_file: pd.DataFrame = pd.read_csv(
+            os.path.join(dir_ocr_result, file.replace("jpg", "csv"))
+        )
         ocr_coor = []
         ocr_text = []
+        seg_classes = []
         for index, row in ocr_csv_file.iterrows():
-            ocr_text.append(row['text'])
-            ocr_coor.append([row['left'], row['top'], row['right'], row['bot']])
+            ocr_text.append(row["text"])
+            ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
+            seg_classes.append(row["data_class"])
 
         ocr_coor_expand = []
         ocr_tokens = []
+        seg_classes_expand = []
+        seg_indices = []
         ocr_text_filter = []
-        for text, coor in zip(ocr_text, ocr_coor):
+        for seg_index, (text, coor, seg_class) in enumerate(
+            zip(ocr_text, ocr_coor, seg_classes)
+        ):
             if text == "":
                 continue
             curr_tokens = self.tokenizer.tokenize(text)
             for i in range(len(curr_tokens)):
                 ocr_coor_expand.append(coor)
                 ocr_tokens.append(curr_tokens[i])
+                seg_classes_expand.append(seg_class)
+                seg_indices.append(seg_index)
                 if self.train == False:
                     ocr_text_filter.append(text)
 
@@ -132,16 +136,16 @@ class SROIEDataset(Dataset):
         if self.train == True:
             return (
                 self.transform_img(image),
-                torch.tensor(data_class),
-                torch.tensor(pos_neg),
+                torch.tensor(seg_indices, dtype=torch.int),
+                torch.tensor(seg_classes_expand, dtype=torch.int),
                 torch.tensor(ocr_coor_expand, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
             return (
                 self.transform_img(image),
-                torch.tensor(data_class),
-                torch.tensor(pos_neg),
+                torch.tensor(seg_indices, dtype=torch.int),
+                torch.tensor(seg_classes_expand, dtype=torch.int),
                 torch.tensor(ocr_coor_expand, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
@@ -149,15 +153,15 @@ class SROIEDataset(Dataset):
 
     def _ViBERTgrid_coll_func(self, samples):
         imgs = []
-        class_labels = []
-        pos_neg_labels = []
+        seg_indices = []
+        token_classes = []
         ocr_coors = []
         ocr_corpus = []
         ocr_text = []
         for item in samples:
             imgs.append(item[0])
-            class_labels.append(item[1])
-            pos_neg_labels.append(item[2])
+            seg_indices.append(item[1])
+            token_classes.append(item[2])
             ocr_coors.append(item[3])
             ocr_corpus.append(item[4])
             if self.train == False:
@@ -173,8 +177,8 @@ class SROIEDataset(Dataset):
         if self.train == True:
             return (
                 tuple(imgs),
-                tuple(class_labels),
-                tuple(pos_neg_labels),
+                tuple(seg_indices),
+                tuple(token_classes),
                 ocr_coors.int(),
                 ocr_corpus,
                 mask.int(),
@@ -182,72 +186,13 @@ class SROIEDataset(Dataset):
         else:
             return (
                 tuple(imgs),
-                tuple(class_labels),
-                tuple(pos_neg_labels),
+                tuple(seg_indices),
+                tuple(token_classes),
                 ocr_coors.int(),
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
             )
-
-    def _extract_train(self, root: str):
-        """@Deprecated
-        Memory exhausted implementation, no longer available
-
-        """
-        warnings.warn("This function is deprecated", DeprecationWarning)
-
-        dir_img = os.path.join(root, "image")
-        dir_class = os.path.join(root, "class")
-        dir_pos_neg = os.path.join(root, "pos_neg")
-        dir_ocr_result = os.path.join(root, "ocr_result")
-
-        filename_list = [f for f in os.listdir(dir_img)]
-
-        img_list = []
-        ocr_result_list = []
-        class_list = []
-        pos_neg_list = []
-
-        print("extracting SROIE train data")
-        for file in tqdm(filename_list):
-            file: str
-
-            image = Image.open(os.path.join(dir_img, file))
-            if len(image.split()) != 3:
-                image = image.convert('RGB')
-            img_list.append(image)
-
-            data_class = np.load(os.path.join(dir_class, file.replace("jpg", "npy")))
-            class_list.append(data_class)
-
-            pos_neg = np.load(os.path.join(dir_pos_neg, file.replace("jpg", "npy")))
-            pos_neg_list.append(pos_neg)
-
-            with open(
-                os.path.join(dir_ocr_result, file.replace("jpg", "csv")),
-                "r",
-                encoding="utf-8",
-            ) as csv_file:
-                data_lines = csv_file.readlines()[1:]
-                self.max_length = (
-                    len(data_lines)
-                    if (len(data_lines) > self.max_length)
-                    else self.max_length
-                )
-                # debug----------------------------------------------------
-                # curr_ocr_result = [
-                #     data_line.strip().split(",")[1:] for data_line in data_lines
-                # ]
-                # if len(curr_ocr_result) == 0:
-                #     print("\nempty result found in data extraction, please check")
-                #     print(file.replace(".jpg", "csv"))
-                # ---------------------------------------------------------
-                ocr_result_list.append(
-                    [data_line[:-2].strip().split(",")[1:] for data_line in data_lines]
-                )
-
-        return img_list, np.array(class_list), np.array(pos_neg_list), ocr_result_list
 
 
 def load_train_dataset(
@@ -406,11 +351,11 @@ if __name__ == "__main__":
         tokenizer=tokenizer,
         return_mean_std=True,
     )
-    
+
     print(image_mean, image_std)
 
     for train_batch in tqdm(train_loader):
-        img, class_label, pos_neg, coor, corpus, mask = train_batch
+        img, seg_indices, token_class, coor, corpus, mask = train_batch
         for item in coor:
             if len(item) == 0:
                 print("empty item found")

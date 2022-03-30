@@ -16,7 +16,7 @@ from transformers import BertTokenizer
 
 class EPHOIEDataset(Dataset):
     """The EPHOIE dataset
-       
+
        can be downloaded from https://github.com/HCIILAB/EPHOIE after application
 
 
@@ -85,24 +85,18 @@ class EPHOIEDataset(Dataset):
             with open(os.path.join(root, "train.txt"), "r") as f:
                 lines = f.readlines()
                 for line in lines:
-                    self.filename_list.append(line.strip('\n'))
+                    self.filename_list.append(line.strip("\n"))
         else:
             with open(os.path.join(root, "test.txt"), "r") as f:
                 lines = f.readlines()
                 for line in lines:
-                    self.filename_list.append(line.strip('\n'))
+                    self.filename_list.append(line.strip("\n"))
 
     def __len__(self) -> int:
         return len(self.filename_list)
 
     def __getitem__(self, index):
         dir_img = os.path.join(self.root, "image", (self.filename_list[index] + ".jpg"))
-        dir_class = os.path.join(
-            self.root, "_class", (self.filename_list[index] + ".npy")
-        )
-        dir_pos_neg = os.path.join(
-            self.root, "_pos_neg", (self.filename_list[index] + ".npy")
-        )
         dir_csv_label = os.path.join(
             self.root, "_label_csv", (self.filename_list[index] + ".csv")
         )
@@ -110,29 +104,37 @@ class EPHOIEDataset(Dataset):
         image = Image.open(dir_img)
         if len(image.split()) != 3:
             image = image.convert("RGB")
-        data_class = np.load(dir_class)
-        pos_neg = np.load(dir_pos_neg)
 
         ocr_coor = []
         ocr_text = []
+        seg_classes = []
         csv_label: pd.DataFrame = pd.read_csv(dir_csv_label)
         for _, row in csv_label.iterrows():
-            assert (row["left"] < row["right"]), f"coor error found in {self.filename_list[index]}"
-            assert (row["top"] < row["bot"]), f"coor error found in {self.filename_list[index]}"
-            
+            assert (
+                row["left"] < row["right"]
+            ), f"coor error found in {self.filename_list[index]}"
+            assert (
+                row["top"] < row["bot"]
+            ), f"coor error found in {self.filename_list[index]}"
+
             ocr_text.append(row["text"])
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
+            seg_classes.append(row["data_class"])
 
         ocr_coor_expand = []
         ocr_tokens = []
+        seg_classes_expand = []
+        seg_indices = []
         ocr_text_filter = []
-        for text, coor in zip(ocr_text, ocr_coor):
+        for seg_index, (text, coor, seg_class) in zip(ocr_text, ocr_coor, seg_classes):
             if text == "":
                 continue
             curr_tokens = self.tokenizer.tokenize(text)
             for i in range(len(curr_tokens)):
                 ocr_coor_expand.append(coor)
                 ocr_tokens.append(curr_tokens[i])
+                seg_classes_expand.append(seg_class)
+                seg_indices.append(seg_index)
                 if self.train == False:
                     ocr_text_filter.append(text)
 
@@ -141,16 +143,16 @@ class EPHOIEDataset(Dataset):
         if self.train == True:
             return (
                 self.transform_img(image),
-                torch.tensor(data_class),
-                torch.tensor(pos_neg),
+                torch.tensor(seg_indices, dtype=torch.int),
+                torch.tensor(seg_classes_expand, dtype=torch.int),
                 torch.tensor(ocr_coor_expand, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
             return (
                 self.transform_img(image),
-                torch.tensor(data_class),
-                torch.tensor(pos_neg),
+                torch.tensor(seg_indices, dtype=torch.int),
+                torch.tensor(seg_classes_expand, dtype=torch.int),
                 torch.tensor(ocr_coor_expand, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
@@ -158,15 +160,15 @@ class EPHOIEDataset(Dataset):
 
     def _ViBERTgrid_coll_func(self, samples):
         imgs = []
-        class_labels = []
-        pos_neg_labels = []
+        seg_indices = []
+        token_classes = []
         ocr_coors = []
         ocr_corpus = []
         ocr_text = []
         for item in samples:
             imgs.append(item[0])
-            class_labels.append(item[1])
-            pos_neg_labels.append(item[2])
+            seg_indices.append(item[1])
+            token_classes.append(item[2])
             ocr_coors.append(item[3])
             ocr_corpus.append(item[4])
             if self.train == False:
@@ -182,8 +184,8 @@ class EPHOIEDataset(Dataset):
         if self.train == True:
             return (
                 tuple(imgs),
-                tuple(class_labels),
-                tuple(pos_neg_labels),
+                tuple(seg_indices),
+                tuple(token_classes),
                 ocr_coors.int(),
                 ocr_corpus,
                 mask.int(),
@@ -191,8 +193,8 @@ class EPHOIEDataset(Dataset):
         else:
             return (
                 tuple(imgs),
-                tuple(class_labels),
-                tuple(pos_neg_labels),
+                tuple(seg_indices),
+                tuple(token_classes),
                 ocr_coors.int(),
                 ocr_corpus,
                 mask.int(),
@@ -295,7 +297,7 @@ def load_train_dataset_multi_gpu(
     val_loader : DataLoader
 
     """
-    
+
     EPHOIE_train_dataset = EPHOIEDataset(root, train=True, tokenizer=tokenizer)
     EPHOIE_val_dataset = EPHOIEDataset(root, train=False, tokenizer=tokenizer)
 
@@ -324,7 +326,9 @@ def load_train_dataset_multi_gpu(
 
 
 def load_test_data(
-    root: str, num_workers: int = 0, tokenizer: Optional[Callable] = None,
+    root: str,
+    num_workers: int = 0,
+    tokenizer: Optional[Callable] = None,
 ):
     EPHOIE_test_dataset = EPHOIEDataset(root=root, train=False, tokenizer=tokenizer)
     test_loader = DataLoader(

@@ -146,8 +146,6 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
             label_smoothing=self.label_smoothing,
         )
 
-        print(f"[DEBUG] in OHEMLoss {input.shape} {target.shape} {self.weight} {self.ignore_index} {self.label_smoothing} {ce_loss.shape}")
-
         mask = target == 0
         positive_loss = ce_loss[~mask]
         negative_loss = ce_loss[mask]

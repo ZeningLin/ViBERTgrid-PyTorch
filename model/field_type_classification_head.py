@@ -122,7 +122,7 @@ class LateFusion(nn.Module):
         return fuse_embeddings
 
 
-class FieldTypeClassification(nn.Module):
+class FieldTypeClassificationSimplified(nn.Module):
     """a simplified version of field type classification,
     discard the original two-stage classification pipeline
 
@@ -139,7 +139,7 @@ class FieldTypeClassification(nn.Module):
     num_hard_positive: int
         number of hard positive samples for OHEM in `L_2`, by default -1
     num_hard_negative: int
-        number of hard negative samples for OHEM in `L_2`, by default -1    
+        number of hard negative samples for OHEM in `L_2`, by default -1
 
     """
 
@@ -148,30 +148,40 @@ class FieldTypeClassification(nn.Module):
         num_classes: int,
         fuse_embedding_channel: int,
         loss_weights: Optional[List] = None,
-        num_hard_positive: int = -1,
-        num_hard_negative: int = -1,
+        num_hard_positive_1: int = -1,
+        num_hard_negative_1: int = -1,
+        num_hard_positive_2: int = -1,
+        num_hard_negative_2: int = -1,
     ) -> None:
         super().__init__()
-        self.classification_net = SingleLayer(
+        self.num_classes = num_classes
+        self.fuse_embedding_channel = fuse_embedding_channel
+        self.pos_neg_classification_net = SingleLayer(
+            in_channels=fuse_embedding_channel, out_channels=2, bias=True
+        )
+        self.category_classification_net = SingleLayer(
             in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
+        )
+        self.pos_neg_classification_loss = CrossEntropyLossOHEM(
+            num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
         )
         if loss_weights is not None:
             self.field_type_classification_loss = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive,
-                num_hard_negative=num_hard_negative,
+                num_hard_positive=num_hard_positive_2,
+                num_hard_negative=num_hard_negative_2,
                 weight=loss_weights,
             )
         else:
             self.field_type_classification_loss = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive, num_hard_negative=num_hard_negative
+                num_hard_positive=num_hard_positive_2,
+                num_hard_negative=num_hard_negative_2,
             )
 
     def forward(
         self,
         fuse_embeddings: torch.Tensor,
-        coords: torch.Tensor,
         mask: torch.Tensor,
-        class_labels: torch.Tensor,
+        seg_classes: Tuple[torch.Tensor],
     ) -> torch.Tensor:
         """a simplified version of field type classification,
         discard the original two-stage classification pipeline
@@ -182,12 +192,10 @@ class FieldTypeClassification(nn.Module):
         ----------
         fuse_embeddings : torch.Tensor
             late fusion results from late_fusion
-        coords : torch.Tensor
-            coords from SROIEDataset
         mask : torch.Tensor
             mask from SROIEDataset
-        class_labels : torch.Tensor
-            class labels from SROIEDataset
+        segment_classes: Tuple[torch.Tensor]
+            segment_classes from dataset
 
         Returns
         -------
@@ -196,53 +204,38 @@ class FieldTypeClassification(nn.Module):
         pred_class : torch.Tensor
             prediction class result
         """
-        device = coords.device
+        device = mask.device
 
-        bs = coords.shape[0]
-        seq_len = coords.shape[1]
-        field_types = class_labels.shape[1]
-        # (bs*seq_len, 1024) -> (bs, seq_len, 1024)
-        fuse_embeddings = fuse_embeddings.reshape(bs, -1, fuse_embeddings.shape[-1])
+        label_class = torch.cat(seg_classes, dim=0).to(device).long()
+        label_pos_neg = (label_class > 0).long()
 
-        # (bs*seq_len, field_types)
-        pred_class_orig = self.classification_net(
-            fuse_embeddings.reshape(-1, fuse_embeddings.shape[-1])
+        # (bs*seq_len)
+        mask = mask.reshape(-1)
+        fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
+        # (pure_len)
+        fuse_embeddings = fuse_embeddings[mask == 1]
+
+        assert fuse_embeddings.shape[0] == label_class.shape[0]
+
+        # (pure_len, 2)
+        pred_pos_neg = self.pos_neg_classification_net(fuse_embeddings)
+        pos_neg_classification_loss_val = self.pos_neg_classification_loss(
+            pred_pos_neg, label_pos_neg
         )
-        pred_class_orig = pred_class_orig.reshape(bs, seq_len, field_types)
+        # (pure_len)
+        pred_pos_neg_mask = torch.argmax(pred_pos_neg.detach(), dim=1)
 
-        # TODO Low efficiency implementation, need optimization
-        classification_loss_val = 0
-        label_class = []
-        pred_class = []
-        for bs_index in range(bs):
-            for seq_index in range(seq_len):
-                if mask[bs_index, seq_index] == 1:
-                    cur_coor = coords[bs_index, seq_index, :]
-                    if cur_coor[1] == cur_coor[3]:
-                        cur_coor[3] += 1
-                    if cur_coor[0] == cur_coor[2]:
-                        cur_coor[2] += 1
-                    curr_label_class = class_labels[
-                        bs_index,
-                        :,
-                        cur_coor[1] : cur_coor[3],
-                        cur_coor[0] : cur_coor[2],
-                    ]
-                    curr_label_class = curr_label_class.argmax(dim=0).reshape(-1)
-                    curr_label_class = curr_label_class.bincount().argmax().item()
-                    label_class.append(curr_label_class)
-                    pred_class.append(pred_class_orig[None, bs_index, seq_index])
-                else:
-                    continue
-
-        label_class = torch.tensor(label_class).to(device)
-        pred_class = torch.cat(pred_class, dim=0).to(device)
-
+        # (pure_len, field_types)
+        pred_class = self.category_classification_net(
+            fuse_embeddings
+        )
         classification_loss_val = self.field_type_classification_loss(
-            pred_class, label_class
+            pred_class[pred_pos_neg_mask], label_class[pred_pos_neg_mask]
         )
+        pred_class[~pred_pos_neg_mask] = 0
+
         return (
-            classification_loss_val,
+            pos_neg_classification_loss_val + classification_loss_val,
             label_class.int(),
             pred_class.argmax(dim=1).int(),
         )
