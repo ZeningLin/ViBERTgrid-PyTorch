@@ -103,7 +103,7 @@ def train(args):
     num_hard_negative_aux = hyp["num_hard_negative_aux"]
 
     if loss_aux_sample_list is not None:
-        amp = False                     # CrossEntropyLossRandomSample has conflicts with amp mode
+        amp = False  # CrossEntropyLossRandomSample has conflicts with amp mode
 
     device = torch.device(device)
 
@@ -283,6 +283,15 @@ def train(args):
             sys.stderr = TerminalLogger(
                 os.path.join(save_log, comment + ".log"), sys.stdout
             )
+
+    print(f"==> Initial validation")
+    classification_acc, F1 = validate(
+        model=model,
+        validate_loader=val_loader,
+        device=device,
+        epoch=0,
+        logger=logger,
+    )
 
     top_acc = 0
     top_F1_tresh = 0.92

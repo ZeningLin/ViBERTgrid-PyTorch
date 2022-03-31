@@ -296,7 +296,7 @@ def load_train_dataset_multi_gpu(
     dir_val = os.path.join(root, "test")
 
     SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(dir_val, train=True, tokenizer=tokenizer)
+    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
 
     train_sampler = distributed.DistributedSampler(SROIE_train_dataset)
     val_sampler = distributed.DistributedSampler(SROIE_val_dataset)

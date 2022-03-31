@@ -144,6 +144,7 @@ class SemanticSegmentationClassifier(nn.Module):
         pred_ss : torch.Tensor
             prediction of semantic segmentation class
         """
+        device = fuse_feature.device
 
         x_out_1: torch.Tensor
         x_out_2: torch.Tensor
@@ -155,10 +156,10 @@ class SemanticSegmentationClassifier(nn.Module):
         batch_size = x_out_1.shape[0]
         feat_shape = x_out_1.shape[-2:]
         pos_neg_labels = torch.zeros(
-            (batch_size, feat_shape[0], feat_shape[1]), dtype=torch.long
+            (batch_size, feat_shape[0], feat_shape[1]), dtype=torch.long, device=device
         )
         class_labels = torch.zeros(
-            (batch_size, feat_shape[0], feat_shape[1]), dtype=torch.long
+            (batch_size, feat_shape[0], feat_shape[1]), dtype=torch.long, device=device
         )
         for batch_index in range(batch_size):
             prev_segment = -1

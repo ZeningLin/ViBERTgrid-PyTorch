@@ -430,7 +430,7 @@ def validate(
         if iter_msg:
             print(
                 iter_message.format(
-                    epoch=epoch,
+                    epoch=epoch + 1,
                     iter=step + 1,
                     num_iter=num_iter,
                 )

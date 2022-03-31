@@ -36,7 +36,7 @@ def train(args):
 
     device = hyp["device"]
     sync_bn = hyp["syncBN"]
-    
+
     start_epoch = hyp["start_epoch"]
     end_epoch = hyp["end_epoch"]
     batch_size = hyp["batch_size"]
@@ -154,11 +154,11 @@ def train(args):
     params_cnn = []
     params_bert = []
     for name, parameters in model.named_parameters():
-        if 'bert_model' in name and parameters.requires_grad:
+        if "bert_model" in name and parameters.requires_grad:
             params_bert.append(parameters)
         elif parameters.requires_grad:
             params_cnn.append(parameters)
-            
+
     optimizer_cnn = torch.optim.SGD(
         params=params_cnn,
         lr=learning_rate_cnn,
@@ -172,13 +172,11 @@ def train(args):
         eps=epsilon_bert,
         weight_decay=weight_decay_bert,
     )
-    
+
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
     lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
-        optimizer=optimizer_cnn,
-        step_size = 20,
-        gamma = 0.1
+        optimizer=optimizer_cnn, step_size=20, gamma=0.1
     )
     wd_schedule_values_cnn = cosine_scheduler(
         base_value=weight_decay_cnn,
@@ -188,9 +186,7 @@ def train(args):
     )
 
     lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
-        optimizer=optimizer_bert,
-        step_size = 50,
-        gamma = 0.1
+        optimizer=optimizer_bert, step_size=50, gamma=0.1
     )
     wd_schedule_values_bert = cosine_scheduler(
         base_value=weight_decay_bert,
@@ -222,7 +218,6 @@ def train(args):
     else:
         print("==> no pretrained")
 
-
     logger = None
     if is_main_process():
         curr_time = time.localtime()
@@ -232,9 +227,11 @@ def train(args):
         curr_time_h += (
             f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
         )
-        comment = comment_exp + \
-            f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_bs-{batch_size}" \
+        comment = (
+            comment_exp
+            + f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_bs-{batch_size}"
             f"_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_time-{curr_time_h}"
+        )
         logger = TensorboardLogger(comment=comment)
         if save_log != "":
             if not os.path.exists(save_log):
@@ -245,6 +242,15 @@ def train(args):
             sys.stderr = TerminalLogger(
                 os.path.join(save_log, comment + ".log"), sys.stdout
             )
+
+    print(f"==> Initial validation")
+    classification_acc, F1 = validate(
+        model=model,
+        validate_loader=val_loader,
+        device=device,
+        epoch=0,
+        logger=logger,
+    )
 
     top_acc = 0
     top_F1_tresh = 0.97
@@ -281,10 +287,10 @@ def train(args):
             epoch=epoch,
             logger=logger,
         )
-        
+
         if F1 > top_F1:
             top_F1 = F1
-        
+
         if classification_acc > top_acc:
             top_acc = classification_acc
 
@@ -300,10 +306,18 @@ def train(args):
                     "model": model.state_dict(),
                     "optimizer_cnn": optimizer_cnn.state_dict(),
                     "optimizer_bert": optimizer_bert.state_dict(),
-                    "lr_scheduler_cnn": torch.from_numpy(lr_schedule_values_cnn) if isinstance(lr_schedule_values_cnn, np.ndarray) else lr_schedule_values_cnn.state_dict(),
-                    "weight_decay_scheduler_cnn": torch.from_numpy(wd_schedule_values_cnn),
-                    "lr_scheduler_bert": torch.from_numpy(lr_schedule_values_bert) if isinstance(lr_schedule_values_bert, np.ndarray) else lr_schedule_values_bert.state_dict(),
-                    "weight_decay_scheduler_bert": torch.from_numpy(wd_schedule_values_bert),
+                    "lr_scheduler_cnn": torch.from_numpy(lr_schedule_values_cnn)
+                    if isinstance(lr_schedule_values_cnn, np.ndarray)
+                    else lr_schedule_values_cnn.state_dict(),
+                    "weight_decay_scheduler_cnn": torch.from_numpy(
+                        wd_schedule_values_cnn
+                    ),
+                    "lr_scheduler_bert": torch.from_numpy(lr_schedule_values_bert)
+                    if isinstance(lr_schedule_values_bert, np.ndarray)
+                    else lr_schedule_values_bert.state_dict(),
+                    "weight_decay_scheduler_bert": torch.from_numpy(
+                        wd_schedule_values_bert
+                    ),
                     "args": args,
                     "epoch": epoch,
                 }
@@ -318,7 +332,7 @@ def train(args):
                     save_files,
                     os.path.join(
                         save_top,
-                        f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"\
+                        f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
                         f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
                     ),
                 )
@@ -326,7 +340,7 @@ def train(args):
         if is_main_process():
             if logger is not None:
                 logger.flush()
-    
+
     print(f"top_F1: {top_F1:.4f}  top_acc: {top_acc:.4f}")
 
 
