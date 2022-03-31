@@ -59,8 +59,10 @@ def train(args):
     weight_decay_bert = hyp["optimizer_bert_hyp"]["weight_decay"]
     min_weight_decay_bert = hyp["optimizer_bert_hyp"]["min_weight_decay"]
 
-    num_hard_positive_main = hyp["num_hard_positive_main"]
-    num_hard_negative_main = hyp["num_hard_negative_main"]
+    num_hard_positive_main_1 = hyp["num_hard_positive_main_1"]
+    num_hard_negative_main_1 = hyp["num_hard_negative_main_1"]
+    num_hard_positive_main_2 = hyp["num_hard_positive_main_2"]
+    num_hard_negative_main_2 = hyp["num_hard_negative_main_2"]
     loss_aux_sample_list = hyp["loss_aux_sample_list"]
     num_hard_positive_aux = hyp["num_hard_positive_aux"]
     num_hard_negative_aux = hyp["num_hard_negative_aux"]
@@ -128,8 +130,10 @@ def train(args):
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
-        num_hard_positive_main=num_hard_positive_main,
-        num_hard_negative_main=num_hard_negative_main,
+        num_hard_positive_main_1=num_hard_positive_main_1,
+        num_hard_negative_main_1=num_hard_negative_main_1,
+        num_hard_positive_main_2=num_hard_positive_main_2,
+        num_hard_negative_main_2=num_hard_negative_main_2,
         num_hard_positive_aux=num_hard_positive_aux,
         num_hard_negative_aux=num_hard_negative_aux,
         loss_aux_sample_list=loss_aux_sample_list,
