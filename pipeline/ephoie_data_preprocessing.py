@@ -64,6 +64,66 @@ def generate_json(root_dir_txt_label: str, root_dir_json_label: str) -> None:
         )
 
 
+def single_label_parser_full_seg(
+    dir_img: str,
+    dir_json_label: str,
+    dir_csv_label: str,
+    dir_class: str,
+    dir_pos_neg: str,
+    target_shape: Tuple[int] = None,
+):
+    image = plt.imread(dir_img)
+    image_shape = image.shape
+
+    if target_shape is not None:
+        assert (
+            len(target_shape) == 2
+        ), f"target_shape can only contain 2 elements, {len(target_shape)} given"
+        pos_neg_label = np.zeros(target_shape, dtype=int)
+        class_label = np.zeros(target_shape, dtype=int)
+    else:
+        pos_neg_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
+        class_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
+
+    csv_label = pd.DataFrame(
+        columns=["left", "top", "right", "bot", "text", "data_class", "pos_neg"]
+    )
+
+    with open(dir_json_label, "r") as json_f:
+        json_label: Dict = json.load(json_f)
+
+        for segment in json_label.values():
+            hor_candidate = segment["box"][::2]
+            ver_candidate = segment["box"][1::2]
+
+            left_coor = int(min(hor_candidate))
+            top_coor = int(min(ver_candidate))
+            right_coor = int(max(hor_candidate))
+            bot_coor = int(max(ver_candidate))
+            width = right_coor - left_coor
+
+            if target_shape is not None:
+                scale_x = target_shape[0] / image_shape[0]
+                scale_y = target_shape[1] / image_shape[1]
+                left_coor *= scale_x
+                right_coor *= scale_x
+                top_coor *= scale_y
+                bot_coor *= scale_y
+
+            seg_class = list()
+            char_pos_neg = 0
+
+            curr_row_dict = {
+                "left": [left_coor],
+                "top": [top_coor],
+                "right": [right_coor],
+                "bot": [bot_coor],
+                "text": [],
+                "data_class": [seg_class],
+                "pos_neg": [char_pos_neg],
+            }
+
+
 def single_label_parser_ltp(
     dir_img: str,
     dir_json_label: str,
@@ -269,10 +329,14 @@ def data_preprocessing_pipeline(
 if __name__ == "__main__":
     image_root = r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/image"
     txt_label_root = r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/label"
-    json_label_root = r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/_label_json"
+    json_label_root = (
+        r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/_label_json"
+    )
     csv_label_root = r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/_label_csv"
     class_label_root = r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/_class"
-    pos_neg_label_root = r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/_pos_neg"
+    pos_neg_label_root = (
+        r"/media/zening_lin@intsig.com/sdb/datasets/EPHOIE_ltp/_pos_neg"
+    )
 
     if not os.path.exists(json_label_root):
         generate_json(
