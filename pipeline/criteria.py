@@ -15,11 +15,11 @@ def token_classification_criteria(gt_label: torch.Tensor, pred_label: torch.Tens
 
 
 @torch.no_grad()
-def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor : torch.Tensor]):
+def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor]):
     pred_label: torch.Tensor
     gt_label: torch.Tensor
-    pred_label = torch.cat(pred_gt_dict.keys(), dim=0)
-    gt_label = torch.cat(pred_gt_dict.values(), dim=0)
+    pred_label = torch.cat(list(pred_gt_dict.keys()), dim=0)
+    gt_label = torch.cat(list(pred_gt_dict.values()), dim=0)
 
     num_classes = pred_label.shape[1]
     pred_label = pred_label.argmax(dim=1).int()

@@ -403,7 +403,7 @@ def validate(
             image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
 
-        pred_gt_dict.update({pred_label.detach(), gt_label.detach()})
+        pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
         validate_loss = reduce_loss(validate_loss)
         validate_loss_value = validate_loss.item()
@@ -463,11 +463,11 @@ def validate(
     )
 
     if logger is not None:
-        logger.update(head="loss", validate_loss=validate_loss_value, step=epoch)
-        logger.update(head="criteria", label_classification_acc=acc, step=epoch)
-        logger.update(head="criteria", label_precision=marco_precision, step=epoch)
-        logger.update(head="criteria", label_recall=marco_recall, step=epoch)
-        logger.update(head="criteria", label_F1=marco_F1, step=epoch)
+        logger.update(head="loss", validate_loss=validate_loss_value, step=epoch + 1)
+        logger.update(head="criteria", label_classification_acc=acc, step=epoch + 1)
+        logger.update(head="criteria", label_precision=marco_precision, step=epoch + 1)
+        logger.update(head="criteria", label_recall=marco_recall, step=epoch + 1)
+        logger.update(head="criteria", label_F1=marco_F1, step=epoch + 1)
 
     return acc, marco_F1
 

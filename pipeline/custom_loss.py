@@ -31,8 +31,6 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
             self.num_categories = len(sample_list)
         else:
             self.num_categories = None
-        self.loss_list = []
-        self.num_keep_list = []
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.sample_list is None:
@@ -65,11 +63,13 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
             for cate_index in range(self.num_categories):
                 mask_list.append(target == cate_index)
 
+        loss_list = []
+        num_keep_list = []
         for index, mask in enumerate(mask_list):
             curr_sample = self.sample_list[index]
-            curr_loss = ce_loss * mask
+            curr_loss = ce_loss[mask]
             num_keep = min(curr_sample, curr_loss.shape[0])
-            self.num_keep_list.append(num_keep)
+            num_keep_list.append(num_keep)
 
             if num_keep == curr_sample:
                 keep_index = random.sample(range(int(curr_loss.shape[0])), num_keep)
@@ -78,25 +78,21 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
             else:
                 keep_loss = curr_loss
 
-            self.loss_list.append(keep_loss)
+            loss_list.append(keep_loss)
 
         if self.reduction == "sum":
-            keep_ce_loss = torch.zeros(
-                (1,), dtype=float, device=self.loss_list[0].device
-            )
-            for loss in self.loss_list:
+            keep_ce_loss = torch.zeros((1,), dtype=float, device=target.device)
+            for loss in loss_list:
                 keep_ce_loss = keep_ce_loss + loss.sum()
         elif self.reduction == "mean":
             num_keep_total = 0
-            keep_ce_loss = torch.zeros(
-                (1,), dtype=float, device=self.loss_list[0].device
-            )
-            for loss, num_keep in zip(self.loss_list, self.num_keep_list):
+            keep_ce_loss = torch.zeros((1,), dtype=float, device=target.device)
+            for loss, num_keep in zip(loss_list, num_keep_list):
                 keep_ce_loss = keep_ce_loss + loss.sum()
-                num_keep_total = num_keep_total + 1
+                num_keep_total = num_keep_total + num_keep
             keep_ce_loss /= num_keep_total
         elif self.reduction == "none":
-            keep_ce_loss = torch.stack(self.loss_list)
+            keep_ce_loss = torch.stack(loss_list)
         else:
             raise ValueError(
                 f"the given reduction value {self.reduction} is invalid, must be 'none', 'mean' or 'sum' "

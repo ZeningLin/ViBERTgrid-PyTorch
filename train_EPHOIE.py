@@ -88,7 +88,6 @@ def train(args):
     early_fusion_downsampling_ratio = hyp["early_fusion_downsampling_ratio"]
     roi_shape = hyp["roi_shape"]
     p_fuse_downsampling_ratio = hyp["p_fuse_downsampling_ratio"]
-    roi_align_output_reshape = hyp["roi_align_output_reshape"]
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
@@ -126,7 +125,6 @@ def train(args):
         early_fusion_downsampling_ratio=early_fusion_downsampling_ratio,
         roi_shape=roi_shape,
         p_fuse_downsampling_ratio=p_fuse_downsampling_ratio,
-        roi_align_output_reshape=roi_align_output_reshape,
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
@@ -262,7 +260,7 @@ def train(args):
         if logger is not None:
             logger.set_step(epoch * num_training_steps_per_epoch)
 
-        print(f"==> training epoch {epoch}/{end_epoch - start_epoch}")
+        print(f"==> training epoch {epoch + 1}/{end_epoch - start_epoch}")
         loss = train_one_epoch(
             model=model,
             optimizer_cnn=optimizer_cnn,
@@ -279,7 +277,7 @@ def train(args):
             scaler=scaler,
         )
 
-        print(f"==> validating epoch {epoch}/{end_epoch - start_epoch}")
+        print(f"==> validating epoch {epoch + 1}/{end_epoch - start_epoch}")
         classification_acc, F1 = validate(
             model=model,
             validate_loader=val_loader,

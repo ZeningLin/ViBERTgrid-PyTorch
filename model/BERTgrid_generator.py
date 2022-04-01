@@ -8,11 +8,11 @@ class BERTgridGenerator(nn.Module):
     """generate BERTgrid with the given OCR results
 
     This progress can be divided into two sub-progresses,
-    BERT embedding and BERTgrid embedding. 
-    
+    BERT embedding and BERTgrid embedding.
+
     BERT embedding takes corpus and masks from the SROIE dataset
-    as input and generate BERT embeddings of the corpus as output. 
-    
+    as input and generate BERT embeddings of the corpus as output.
+
     BERTgrid embedding maps the BERT embeddings to the feature-maps
 
     Parameters
@@ -21,11 +21,11 @@ class BERTgridGenerator(nn.Module):
         bert_model in hugging face, by default None
     grid_mode : str, optional
         BERTgrid tokens embedding mode.
-        words from the OCR result were splited into several tokens through tokenizer,  
-        at BERTgrid embedding step, measures shall be taken to  
-        aggregate these token embeddings back into word-level,  
-        'mean' mode average token embeddings from the same word,  
-        'first' mode take the first token embeddings of a word,  
+        words from the OCR result were splited into several tokens through tokenizer,
+        at BERTgrid embedding step, measures shall be taken to
+        aggregate these token embeddings back into word-level,
+        'mean' mode average token embeddings from the same word,
+        'first' mode take the first token embeddings of a word,
         by default 'mean'
     stride : int, optional
         stride of the feature map at early fusion, by default 8
@@ -35,7 +35,10 @@ class BERTgridGenerator(nn.Module):
     """
 
     def __init__(
-        self, bert_model: Callable = None, grid_mode: str = "mean", stride: int = 8,
+        self,
+        bert_model: Callable = None,
+        grid_mode: str = "mean",
+        stride: int = 8,
     ) -> None:
         super().__init__()
 
@@ -49,10 +52,12 @@ class BERTgridGenerator(nn.Module):
         self.grid_mode = grid_mode
         self.stride = stride
 
-    def BERT_embedding(self, corpus: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """apply BERT embedding to the given corpus 
+    def BERT_embedding(
+        self, corpus: torch.Tensor, mask: torch.Tensor, seg_indices: torch.Tensor
+    ) -> torch.Tensor:
+        """apply BERT embedding to the given corpus
 
-        corpus and mask directly come from the SROIEDataset through DataLoader,   
+        corpus and mask directly come from the SROIEDataset through DataLoader,
         padding and sliding windows will be applied automatically in this function
 
         Parameters
@@ -61,6 +66,8 @@ class BERTgridGenerator(nn.Module):
             corpus from SROIEDataset
         mask : torch.Tensor
             mask from SROIEDataset, indicates whether the token is valid or not
+        seg_indices: torch.Tensor
+            segment indices from SROIEDataset
 
         Returns
         -------
@@ -91,6 +98,7 @@ class BERTgridGenerator(nn.Module):
 
         # apply BERT embedding to all windows
         embeddings = []
+        mask_list = []
         for count in range(win_count):
             end_index = (count + 1) * 510
             curr_seq_len = 0
@@ -128,24 +136,62 @@ class BERTgridGenerator(nn.Module):
             curr_output = curr_output.last_hidden_state
 
             curr_output = curr_output[
-                :, 1 : (1 + curr_seq_len),
+                :,
+                1 : (1 + curr_seq_len),
             ]
 
+            mask_list.append(curr_mask)
             embeddings.append(curr_output)
 
             start_index = end_index
 
-        if win_count == 1:
-            return embeddings[0]
-        else:
-            return torch.cat(embeddings, dim=1)
+        embeddings = torch.cat(embeddings, dim=1)
+        mask_list = torch.cat(mask_list, dim=1)
+
+        aggre_embeddings = list()
+        for batch_index in range(batch_size):
+            curr_seg_indices = seg_indices[batch_index]
+            curr_embeddings = embeddings[batch_index][mask_list[batch_index] == 1]
+            assert curr_embeddings.shape[0] == curr_seg_indices.shape[0]
+
+            curr_batch_aggre_embeddings = list()
+
+            if self.grid_mode == "mean":
+                mean_embeddings = torch.zeros(curr_embeddings.shape[-1], device=device)
+                num_tok = 1
+
+            prev_seg_index = -1
+            for token_index in range(curr_embeddings.shape[0]):
+                curr_seg_index = curr_seg_indices[token_index]
+                curr_embedding = curr_embeddings[token_index]
+                if curr_seg_index.int().item() == prev_seg_index:
+                    if self.grid_mode == "mean":
+                        mean_embeddings += curr_embedding
+                        num_tok += 1
+                    elif self.grid_mode == "first":
+                        continue
+                else:
+                    if self.grid_mode == "mean":
+                        mean_embeddings /= num_tok
+                        curr_batch_aggre_embeddings.append(mean_embeddings.unsqueeze(0))
+
+                        mean_embeddings = torch.zeros(
+                            curr_embeddings.shape[-1], device=device
+                        )
+                        num_tok = 1
+                    elif self.grid_mode == "first":
+                        curr_batch_aggre_embeddings.append(curr_embedding.unsqueeze(0))
+
+            curr_batch_aggre_embeddings = torch.cat(curr_batch_aggre_embeddings, dim=0)
+            aggre_embeddings.append(curr_batch_aggre_embeddings)
+
+        return tuple(aggre_embeddings)
 
     def BERTgrid_embedding(
         self,
         image_shape: Tuple,
-        BERT_embeddings: torch.Tensor,
-        coors: torch.Tensor,
-        mask: torch.Tensor,
+        BERT_embeddings: Tuple[torch.Tensor],
+        coors: Tuple[torch.Tensor],
     ):
         """map the given BERT embeddings to the BERTgrid
 
@@ -153,20 +199,20 @@ class BERTgridGenerator(nn.Module):
         ----------
         image_shape : Tuple
             shape of the original image
-        BERT_embeddings : torch.Tensor
+        BERT_embeddings : Tuple[torch.Tensor]
             BERT embeddings from the BERT_embedding function
-        coors : torch.Tensor
+        coors : Tuple[torch.Tensor]
             coordinate tensor from the SROIEDataset
-        mask : torch.Tensor
-            mask tensor from the SROIEDataset
-        
+
+
         Returns
         -------
         BERTgrid : torch.Tensor
             BERTgrid embeddings
         """
-        bs, seq_len, num_dim = BERT_embeddings.shape
-        device = BERT_embeddings.device
+        bs = len(BERT_embeddings)
+        num_dim = BERT_embeddings[0].shape[-1]
+        device = BERT_embeddings[0].device
 
         BERTgrid = torch.zeros(
             (
@@ -178,53 +224,27 @@ class BERTgridGenerator(nn.Module):
             device=device,
         )
 
-        for bs_index in range(bs):
-            # TODO  low efficiency implementation, may optimized later
-            #       1. unable to vectorize due to the corpus length difference inside a batch
+        for batch_index in range(bs):
+            curr_BERT_embeddings = BERT_embeddings[batch_index]
+            curr_coors = coors[batch_index]
+            assert curr_BERT_embeddings.shape[0] == curr_coors.shape[0]
 
-            # initialize coors with [-1, -1, -1, -1] to match first coor
-            prev_coors = torch.ones((coors.shape[2]), dtype=torch.int, device=device)
-            prev_coors *= -1
-            if self.grid_mode == "mean":
-                mean_count = 1
-                curr_embs = torch.zeros((num_dim), dtype=torch.float32, device=device)
-            for seq_index in range(seq_len):
-                if mask[bs_index, seq_index] == 0:
-                    break
-                if coors[bs_index, seq_index, :].equal(prev_coors):
-                    if self.grid_mode == "mean":
-                        curr_embs += BERT_embeddings[bs_index, seq_index, :]
-                        mean_count += 1
-                    elif self.grid_mode == "first":
-                        continue
-                else:
-                    word_coors = coors[bs_index, seq_index] / self.stride
-                    word_coors = word_coors.int()
-
-                    if self.grid_mode == "mean":
-                        BERTgrid[
-                            bs_index,
-                            :,
-                            word_coors[1] : word_coors[3],
-                            word_coors[0] : word_coors[2],
-                        ] = (curr_embs[:, None, None] / mean_count)
-                        mean_count = 1
-                        curr_embs = BERT_embeddings[bs_index, seq_index, :]
-                    elif self.grid_mode == "first":
-                        BERTgrid[
-                            bs_index,
-                            :,
-                            word_coors[1] : word_coors[3],
-                            word_coors[0] : word_coors[2],
-                        ] = BERT_embeddings[bs_index, seq_index, :, None, None]
-
-                prev_coors = coors[bs_index, seq_index, :]
+            for seg_index in range(curr_coors.shape[0]):
+                curr_BERT_embedding = curr_BERT_embeddings[seg_index]
+                curr_coor = curr_coors[seg_index]
+                BERTgrid[
+                    batch_index,
+                    :,
+                    curr_coor[1] : curr_coor[3],
+                    curr_coor[0] : curr_coor[2],
+                ] = curr_BERT_embedding
 
         return BERTgrid
 
     def forward(
         self,
         image_shape: Tuple,
+        seg_indices: Tuple[torch.Tensor],
         corpus: torch.Tensor,
         mask: torch.Tensor,
         coor: torch.Tensor,
@@ -235,6 +255,8 @@ class BERTgridGenerator(nn.Module):
         ----------
         image_shape : Tuple
             shape of the original image
+        seg_indices : Tuple[torch.Tensor]
+            segment indices from the SROIE dataset
         corpus : torch.Tensor
             corpus from the SROIE dataset
         mask : torch.Tensor
@@ -246,16 +268,17 @@ class BERTgridGenerator(nn.Module):
         -------
         BERT_embeddings: torch.Tensor
             BERT embeddings generated by bert-model
-        
+
         BERTgrid : torch.Tensor
             BERTgrid generated from OCR results and BERT embeddings
         """
-        BERT_embeddings = self.BERT_embedding(corpus=corpus, mask=mask)
+        BERT_embeddings = self.BERT_embedding(
+            corpus=corpus, mask=mask, seg_indices=seg_indices
+        )
         BERTgrid_embeddings = self.BERTgrid_embedding(
             image_shape=image_shape,
             BERT_embeddings=BERT_embeddings,
             coors=coor,
-            mask=mask,
         )
 
         return BERT_embeddings, BERTgrid_embeddings

@@ -92,14 +92,14 @@ class LateFusion(nn.Module):
             in_channels=self.BERT_dimension + 1024, out_channels=1024, bias=True
         )
 
-    def forward(self, ROI_output: torch.Tensor, BERT_embeddings: torch.Tensor):
+    def forward(self, ROI_output: torch.Tensor, BERT_embeddings: Tuple[torch.Tensor]):
         """forward propagation of late fusion
 
         Parameters
         ----------
         ROI_output : torch.Tensor
             ROIs obtained from grid_roi_align
-        BERT_embeddings : torch.Tensor
+        BERT_embeddings : Tuple[torch.Tensor]
             BERT embeddings obtained from BERTgrid_generator
 
         Returns
@@ -107,14 +107,13 @@ class LateFusion(nn.Module):
         fuse_embeddings : torch.Tensor
             fused features
         """
-        _, _, BERT_dimension = BERT_embeddings.shape
-
         # (bs*seq_len, C, ROI_H, ROI_W) -> (bs*seq_len, 1024)
         ROI_embeddings: torch.Tensor = self.ROI_embedding_net(ROI_output)
+        BERT_embeddings: torch.Tensor = torch.cat(BERT_embeddings, dim=0)
+        assert ROI_embeddings.shape[0] == BERT_embeddings.shape[0]
+
         # (bs*seq_len, 1024) + (bs, seq_len, BERT_dimension) -> (bs*seq_len)
-        fuse_embeddings = torch.cat(
-            (ROI_embeddings, BERT_embeddings.reshape(-1, self.BERT_dimension)), dim=1
-        )
+        fuse_embeddings = torch.cat((ROI_embeddings, BERT_embeddings), dim=1)
 
         # (bs*seq_len, 1024)
         fuse_embeddings = self.fuse_embedding_net(fuse_embeddings)
@@ -163,7 +162,7 @@ class FieldTypeClassificationSimplified(nn.Module):
             in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
         )
         self.pos_neg_classification_loss = CrossEntropyLossOHEM(
-            num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
+        num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
         )
         if loss_weights is not None:
             self.field_type_classification_loss = CrossEntropyLossOHEM(
@@ -180,8 +179,7 @@ class FieldTypeClassificationSimplified(nn.Module):
     def forward(
         self,
         fuse_embeddings: torch.Tensor,
-        mask: torch.Tensor,
-        seg_classes: Tuple[torch.Tensor],
+        segment_classes: Tuple[torch.Tensor],
     ) -> torch.Tensor:
         """a simplified version of field type classification,
         discard the original two-stage classification pipeline
@@ -192,8 +190,6 @@ class FieldTypeClassificationSimplified(nn.Module):
         ----------
         fuse_embeddings : torch.Tensor
             late fusion results from late_fusion
-        mask : torch.Tensor
-            mask from SROIEDataset
         segment_classes: Tuple[torch.Tensor]
             segment_classes from dataset
 
@@ -204,17 +200,13 @@ class FieldTypeClassificationSimplified(nn.Module):
         pred_class : torch.Tensor
             prediction class result
         """
-        device = mask.device
+        device = fuse_embeddings.device
 
-        label_class = torch.cat(seg_classes, dim=0).to(device).long()
+        label_class = torch.cat(segment_classes, dim=0).to(device).long()
         label_pos_neg = (label_class > 0).long()
 
         # (bs*seq_len)
-        mask = mask.reshape(-1)
         fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
-        # (pure_len)
-        fuse_embeddings = fuse_embeddings[mask == 1]
-
         assert fuse_embeddings.shape[0] == label_class.shape[0]
 
         # (pure_len, 2)
@@ -226,16 +218,18 @@ class FieldTypeClassificationSimplified(nn.Module):
         pred_pos_neg_mask = torch.argmax(pred_pos_neg.detach(), dim=1)
 
         # (pure_len, field_types)
-        pred_class = self.category_classification_net(
-            fuse_embeddings
-        )
+        pred_class: torch.Tensor
+        pred_class = self.category_classification_net(fuse_embeddings)
         classification_loss_val = self.field_type_classification_loss(
-            pred_class[pred_pos_neg_mask], label_class[pred_pos_neg_mask]
+            # pred_class[pred_pos_neg_mask], label_class[pred_pos_neg_mask]
+            pred_class,
+            label_class,
         )
-        pred_class[~pred_pos_neg_mask] = 0
+        # pred_class[~pred_pos_neg_mask] = 0
 
         return (
-            pos_neg_classification_loss_val + classification_loss_val,
+            # pos_neg_classification_loss_val + classification_loss_val,
+            classification_loss_val,
             label_class.int(),
-            pred_class.argmax(dim=1).int(),
+            pred_class,
         )

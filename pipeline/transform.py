@@ -276,9 +276,10 @@ class GeneralizedViBERTgridTransform(nn.Module):
     def forward(
         self,
         images: Tuple[torch.Tensor],
-        ocr_coors: torch.Tensor,
+        ocr_coors: Tuple[torch.Tensor],
     ):
-        images = [img for img in images]
+        images = list(images)
+        ocr_coors = list(ocr_coors)
         image_sizes = []
         for i in range(len(images)):
             image = images[i]

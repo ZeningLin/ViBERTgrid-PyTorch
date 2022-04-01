@@ -106,7 +106,6 @@ class ViBERTgridNet(nn.Module):
         early_fusion_downsampling_ratio=8,
         roi_shape=7,
         p_fuse_downsampling_ratio=4,
-        roi_align_output_reshape: bool = False,
         late_fusion_fuse_embedding_channel=1024,
         loss_weights: Any = None,
         num_hard_positive_main_1=-1,
@@ -232,7 +231,6 @@ class ViBERTgridNet(nn.Module):
         # grid roi align stuff
         self.roi_shape = roi_shape
         self.p_fuse_downsampling_ratio = p_fuse_downsampling_ratio
-        self.roi_align_output_reshape = roi_align_output_reshape
 
         # field-type classification stuff
         self.late_fusion_fuse_embedding_channel = late_fusion_fuse_embedding_channel
@@ -261,7 +259,6 @@ class ViBERTgridNet(nn.Module):
         self.grid_roi_align_net = GridROIAlign(
             output_size=self.roi_shape,
             step=self.p_fuse_downsampling_ratio,
-            output_reshape=self.roi_align_output_reshape,
         )
 
         self.late_fusion_net = LateFusion(
@@ -272,11 +269,11 @@ class ViBERTgridNet(nn.Module):
         self.field_type_classification_head = FieldTypeClassificationSimplified(
             num_classes=self.num_classes,
             fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+            loss_weights=self.loss_weights,
             num_hard_positive_1=num_hard_positive_main_1,
             num_hard_negative_1=num_hard_negative_main_1,
             num_hard_positive_2=num_hard_positive_main_2,
             num_hard_negative_2=num_hard_negative_main_2,
-            loss_weights=self.loss_weights,
         )
 
         self.semantic_segmentation_head = SemanticSegmentationClassifier(
@@ -302,7 +299,7 @@ class ViBERTgridNet(nn.Module):
         self,
         image: Tuple[torch.Tensor],
         seg_indices: Tuple[torch.Tensor],
-        token_classes: Tuple[torch.Tensor],
+        segment_classes: Tuple[torch.Tensor],
         coors: torch.Tensor,
         corpus: torch.Tensor,
         mask: torch.Tensor,
@@ -315,7 +312,7 @@ class ViBERTgridNet(nn.Module):
 
         # generate BERTgrid
         BERT_embeddings, BERTgrid_embeddings = self.BERTgrid_generator(
-            image_shape, corpus, mask, coors
+            image_shape, seg_indices, corpus, mask, coors
         )
 
         # encode orig image, early fusion
@@ -323,7 +320,7 @@ class ViBERTgridNet(nn.Module):
 
         # Auxiliary Semantic Segmentation Head
         loss_aux, pred_mask, pred_ss = self.semantic_segmentation_head(
-            p_fuse_features, seg_indices, token_classes, coors
+            p_fuse_features, seg_indices, segment_classes, coors
         )
 
         # Word-level Field Type Classification Head
@@ -333,7 +330,7 @@ class ViBERTgridNet(nn.Module):
         late_fuse_embeddings = self.late_fusion_net(roi_features, BERT_embeddings)
         # field type classification
         loss_c, gt_label, pred_label = self.field_type_classification_head(
-            late_fuse_embeddings, mask.long(), token_classes
+            late_fuse_embeddings, segment_classes
         )
 
         total_loss = loss_c + self.loss_control_lambda * loss_aux

@@ -58,12 +58,9 @@ class SemanticSegmentationEncoder(nn.Module):
         x = self.upsampling(x)
 
         x_1 = self.conv_3_1(x)
-        key_pixel_mask = torch.argmax(x_1.detach(), dim=1)
-        key_pixel_mask = key_pixel_mask == 1
-
         x_2 = self.conv_3_2(x)
 
-        return x_1, x_2, key_pixel_mask
+        return x_1, x_2
 
 
 class SemanticSegmentationClassifier(nn.Module):
@@ -123,7 +120,7 @@ class SemanticSegmentationClassifier(nn.Module):
         fuse_feature: torch.Tensor,
         seg_indices: Tuple[torch.Tensor],
         seg_classes: Tuple[torch.Tensor],
-        coors: torch.Tensor,
+        coors: Tuple[torch.Tensor],
     ) -> torch.Tensor:
         """forward propagation of SemanticSegmentationClassifier
 
@@ -148,10 +145,7 @@ class SemanticSegmentationClassifier(nn.Module):
 
         x_out_1: torch.Tensor
         x_out_2: torch.Tensor
-        key_pixel_mask: torch.Tensor
-        x_out_1, x_out_2, key_pixel_mask = self.semantic_segmentation_encoder(
-            fuse_feature
-        )
+        x_out_1, x_out_2 = self.semantic_segmentation_encoder(fuse_feature)
 
         batch_size = x_out_1.shape[0]
         feat_shape = x_out_1.shape[-2:]
@@ -171,24 +165,27 @@ class SemanticSegmentationClassifier(nn.Module):
                 prev_segment = curr_segment
 
                 curr_class = seg_classes[batch_index][token_index]
-                curr_coors = coors[batch_index, token_index]
+                curr_coors = coors[batch_index][token_index]
                 pos_neg_labels[
                     batch_index,
-                    curr_coors[0] : curr_coors[2],
                     curr_coors[1] : curr_coors[3],
+                    curr_coors[0] : curr_coors[4],
                 ] = (
                     1 if curr_class > 0 else 2
                 )
                 class_labels[
                     batch_index,
-                    curr_coors[0] : curr_coors[2],
                     curr_coors[1] : curr_coors[3],
+                    curr_coors[0] : curr_coors[2],
                 ] = curr_class
 
         aux_loss_1_val = self.aux_loss_1(x_out_1, pos_neg_labels)
         aux_loss_2_val = self.aux_loss_2(
-            x_out_2 * (key_pixel_mask.unsqueeze(1).expand(x_out_2.shape)),
-            class_labels * (key_pixel_mask),
+            x_out_2,
+            class_labels,
         )
+
+        del class_labels
+        del pos_neg_labels
 
         return aux_loss_1_val + aux_loss_2_val, x_out_1, x_out_2
