@@ -1,10 +1,10 @@
 import torch
+from typing import Dict
 
 
 @torch.no_grad()
-def SROIE_label_classification_criteria(
-    gt_label: torch.Tensor, pred_label: torch.Tensor
-):
+def token_classification_criteria(gt_label: torch.Tensor, pred_label: torch.Tensor):
+    pred_label = pred_label.argmax(dim=1).int()
     num_correct = 0.0
     num_entities = gt_label.shape[0]
     for entity_index in range(num_entities):
@@ -15,50 +15,51 @@ def SROIE_label_classification_criteria(
 
 
 @torch.no_grad()
-def SROIE_label_F1_criteria(gt_label: torch.Tensor, pred_label: torch.Tensor):
-    num_entities = gt_label.shape[0]
-    num_gt_key = 0.0
-    num_pred_key = 0.0
-    num_precision = 0.0
-    num_recall = 0.0
+def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor : torch.Tensor]):
+    pred_label: torch.Tensor
+    gt_label: torch.Tensor
+    pred_label = torch.cat(pred_gt_dict.keys(), dim=0)
+    gt_label = torch.cat(pred_gt_dict.values(), dim=0)
 
-    # TP = 0.0
-    # TN = 0.0
-    # FP = 0.0
-    # FN = 0.0
+    num_classes = pred_label.shape[1]
+    pred_label = pred_label.argmax(dim=1).int()
 
-    # TODO definition of TP/TN/FP/FN ?
-    # for entity_index in range(num_entities):
-    #     if gt_label[entity_index] == pred_label[entity_index]:
-    #         if gt_label[entity_index] == 0:
-    #             TN += 1
-    #         else:
-    #             TP += 1
-    #     else:
-    #         if pred_label[entity_index] != 0:
-    #             FP +=1
-    #         else:
-    #             FN += 1
+    result_dict = dict()
+    for class_index in range(num_classes):
+        curr_gt_index = gt_label == class_index
+        TP = (pred_label[curr_gt_index] == class_index).int().sum().item()
+        TN = (pred_label[~curr_gt_index] != class_index).int().sum().item()
+        FP = (pred_label[~curr_gt_index] == class_index).int().sum().item()
+        FN = (pred_label[curr_gt_index] != class_index).int().sum().item()
 
-    for entity_index in range(num_entities):
-        if gt_label[entity_index] != 0:
-            num_gt_key += 1
-        if pred_label[entity_index] != 0:
-            num_pred_key += 1
-        if (
-            gt_label[entity_index] == pred_label[entity_index]
-            and gt_label[entity_index] != 0
-            and pred_label[entity_index] != 0
-        ):
-            num_precision += 1
-            num_recall += 1
+        curr_precision = TP / (TP + FP + 1e-8)
+        curr_recall = TP / (TP + FN + 1e-8)
+        curr_F1 = (
+            2 * curr_precision * curr_recall / (curr_precision + curr_recall + 1e-8)
+        )
 
-    # return TP, TN, FP, FN
-    return num_precision, num_recall, num_pred_key, num_gt_key
+        curr_class_dict = {
+            "TP": TP,
+            "TN": TN,
+            "FP": FP,
+            "FN": FN,
+            "precision": curr_precision,
+            "recall": curr_recall,
+            "F1": curr_F1,
+        }
+        result_dict.update({class_index: curr_class_dict})
+
+    num_correct = (pred_label == gt_label).int().sum()
+    num_total = gt_label.shape[0]
+    result_dict.update({"num_classes": num_classes})
+    result_dict.update({"num_correct": num_correct})
+    result_dict.update({"num_total": num_total})
+
+    return result_dict
 
 
 @torch.no_grad()
-def SROIE_ss_classification_criteria(
+def semantic_segmentation_classification_criteria(
     pred_ss_label: torch.Tensor, class_ss_label: torch.Tensor, coor: torch.Tensor
 ):
     batch_size = pred_ss_label.shape[0]

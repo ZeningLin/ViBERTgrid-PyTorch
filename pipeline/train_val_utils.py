@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from collections import defaultdict
-from typing import Iterable, Any, List
+from typing import Iterable, Any, List, Dict
 
 import torch
 import torch.distributed
@@ -13,8 +13,8 @@ import torch.backends.cudnn
 
 from pipeline.distributed_utils import reduce_loss, get_world_size
 from pipeline.criteria import (
-    SROIE_label_classification_criteria,
-    SROIE_label_F1_criteria,
+    token_classification_criteria,
+    token_F1_criteria,
 )
 from utils.ViBERTgrid_visualize import inference_visualize, draw_box
 
@@ -365,17 +365,18 @@ def validate(
             "epoch[{epoch}]",
             "validate_loss: {val_loss}",
             "classification_acc: {acc:.4f}%",
-            "precision: {precision:.4f}",
-            "recall: {recall:.4f}",
-            "F1: {F1:.4f}",
+            "token_marco_precision: {precision:.4f}",
+            "token_marco_recall: {recall:.4f}",
+            "token_marco_F1: {F1:.4f}",
             "time used: {time_used:.0f}s",
+            "\n",
+            "per_class_F1: {per_class_F1}",
             "\n",
         ]
     )
 
     model.eval()
-    total_num_correct, total_num_entities = 0.0, 0.0
-    num_precision, num_recall, num_pred_key, num_gt_key = 0.0, 0.0, 0.0, 0.0
+    pred_gt_dict = dict()
     mean_validate_loss = torch.zeros(1).to(device)
     for step, validate_batch in enumerate(validate_loader):
         (
@@ -395,9 +396,14 @@ def validate(
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
+        validate_loss: torch.Tensor
+        gt_label: torch.Tensor
+        pred_label: torch.Tensor
         validate_loss, _, _, gt_label, pred_label = model(
             image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
+
+        pred_gt_dict.update({pred_label.detach(), gt_label.detach()})
 
         validate_loss = reduce_loss(validate_loss)
         validate_loss_value = validate_loss.item()
@@ -407,25 +413,6 @@ def validate(
 
         if distributed:
             torch.distributed.barrier()
-
-        num_correct, num_entities = SROIE_label_classification_criteria(
-            gt_label=gt_label, pred_label=pred_label
-        )
-
-        (
-            num_precision_,
-            num_recall_,
-            num_pred_key_,
-            num_gt_key_,
-        ) = SROIE_label_F1_criteria(gt_label=gt_label, pred_label=pred_label)
-
-        num_precision += num_precision_
-        num_recall += num_recall_
-        num_pred_key += num_pred_key_
-        num_gt_key += num_gt_key_
-
-        total_num_correct += num_correct
-        total_num_entities += num_entities
 
         if iter_msg:
             print(
@@ -439,14 +426,27 @@ def validate(
     if device != torch.device("cpu"):
         torch.cuda.synchronize(device)
 
-    acc = total_num_correct / (total_num_entities + 1e-8)
-    precision = float(0) if (num_precision == 0) else (num_precision / num_pred_key)
-    recall = float(1) if (num_recall == 0) else (num_recall / num_gt_key)
-    F1 = (
-        float(0)
-        if (precision + recall == 0)
-        else (2 * precision * recall) / (precision + recall)
-    )
+    result_dict: Dict
+    result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
+    num_classes = result_dict["num_classes"]
+    num_correct = result_dict["num_correct"]
+    num_total = result_dict["num_total"]
+    acc = num_correct / num_total
+    marco_precision = 0.0
+    marco_recall = 0.0
+    marco_F1 = 0.0
+    per_class_F1 = list()
+    for class_index in range(num_classes):
+        curr_dict: Dict
+        curr_dict = result_dict[class_index]
+        marco_precision += curr_dict["precision"]
+        marco_recall += curr_dict["recall"]
+        marco_F1 += curr_dict["F1"]
+        per_class_F1.append(curr_dict["F1"])
+
+    marco_precision /= num_classes
+    marco_recall /= num_classes
+    marco_F1 /= num_classes
 
     time_used = time.time() - start_time
     print(
@@ -454,21 +454,22 @@ def validate(
             epoch=(epoch + 1),
             val_loss=validate_loss_value,
             acc=acc,
-            precision=precision,
-            recall=recall,
-            F1=F1,
+            precision=marco_precision,
+            recall=marco_recall,
+            F1=marco_F1,
             time_used=time_used,
+            per_class_F1=per_class_F1,
         )
     )
 
     if logger is not None:
         logger.update(head="loss", validate_loss=validate_loss_value, step=epoch)
         logger.update(head="criteria", label_classification_acc=acc, step=epoch)
-        logger.update(head="criteria", label_precision=precision, step=epoch)
-        logger.update(head="criteria", label_recall=recall, step=epoch)
-        logger.update(head="criteria", label_F1=F1, step=epoch)
+        logger.update(head="criteria", label_precision=marco_precision, step=epoch)
+        logger.update(head="criteria", label_recall=marco_recall, step=epoch)
+        logger.update(head="criteria", label_F1=marco_F1, step=epoch)
 
-    return acc, F1
+    return acc, marco_F1
 
 
 @torch.no_grad()
