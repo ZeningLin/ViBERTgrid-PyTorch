@@ -22,9 +22,7 @@ class GridROIAlign(nn.Module):
 
     """
 
-    def __init__(
-        self, output_size: Any = 7, step: int = 4
-    ) -> None:
+    def __init__(self, output_size: Any = 7, step: int = 4) -> None:
         super().__init__()
 
         if isinstance(output_size, int) or isinstance(output_size, Tuple):
@@ -72,12 +70,13 @@ class GridROIAlign(nn.Module):
         batch_size = len(coords)
         if mask is None:
             for bs_index in range(batch_size):
-                coords_list.append(coords[bs_index].float())
+                curr_b_coords = coords[bs_index].float()
+                coords_list.append(curr_b_coords)
         else:
             for bs_index in range(batch_size):
                 # get the length of valid corpus, discard paddings
-                valid_index = mask[bs_index].sum(dim=0).int()
-                coords_list.append(coords[bs_index][:valid_index].float())
+                curr_b_coords = coords[mask[bs_index] == 1].float()
+                coords_list.append(curr_b_coords)
 
         roi_output: torch.Tensor = self.ROI_Align_net(feature_map, coords_list)
 

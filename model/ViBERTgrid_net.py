@@ -325,7 +325,7 @@ class ViBERTgridNet(nn.Module):
 
         # Word-level Field Type Classification Head
         # roi align
-        roi_features = self.grid_roi_align_net(p_fuse_features, coors, None)
+        roi_features = self.grid_roi_align_net(image_shape, p_fuse_features, coors, None)
         # late fusion
         late_fuse_embeddings = self.late_fusion_net(roi_features, BERT_embeddings)
         # field type classification
@@ -352,7 +352,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    bert_version = "bert-base-cased"
+    bert_version = "bert-base-uncased"
 
     tokenizer = BertTokenizer.from_pretrained(bert_version)
 
@@ -378,6 +378,7 @@ if __name__ == "__main__":
         loss_aux_sample_list=[128, 256, 128],
         num_hard_positive_aux=2,
         num_hard_negative_aux=2,
+        bert_model=bert_version
     )
     model = model.to(device)
 
@@ -386,7 +387,7 @@ if __name__ == "__main__":
     image_list = tuple(image.to(device) for image in image_list)
     seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
     token_classes = tuple(pos_neg_label.to(device) for pos_neg_label in token_classes)
-    ocr_coors = ocr_coors.to(device)
+    ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
     ocr_corpus = ocr_corpus.to(device)
     mask = mask.to(device)
 

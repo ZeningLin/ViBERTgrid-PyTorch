@@ -98,7 +98,6 @@ class BERTgridGenerator(nn.Module):
 
         # apply BERT embedding to all windows
         embeddings = []
-        mask_list = []
         for count in range(win_count):
             end_index = (count + 1) * 510
             curr_seq_len = 0
@@ -140,18 +139,16 @@ class BERTgridGenerator(nn.Module):
                 1 : (1 + curr_seq_len),
             ]
 
-            mask_list.append(curr_mask)
             embeddings.append(curr_output)
 
             start_index = end_index
 
         embeddings = torch.cat(embeddings, dim=1)
-        mask_list = torch.cat(mask_list, dim=1)
 
         aggre_embeddings = list()
         for batch_index in range(batch_size):
             curr_seg_indices = seg_indices[batch_index]
-            curr_embeddings = embeddings[batch_index][mask_list[batch_index] == 1]
+            curr_embeddings = embeddings[batch_index][mask[batch_index] == 1]
             assert curr_embeddings.shape[0] == curr_seg_indices.shape[0]
 
             curr_batch_aggre_embeddings = list()
@@ -181,6 +178,8 @@ class BERTgridGenerator(nn.Module):
                         num_tok = 1
                     elif self.grid_mode == "first":
                         curr_batch_aggre_embeddings.append(curr_embedding.unsqueeze(0))
+
+                prev_seg_index = curr_seg_index.int().item()
 
             curr_batch_aggre_embeddings = torch.cat(curr_batch_aggre_embeddings, dim=0)
             aggre_embeddings.append(curr_batch_aggre_embeddings)
@@ -235,9 +234,9 @@ class BERTgridGenerator(nn.Module):
                 BERTgrid[
                     batch_index,
                     :,
-                    curr_coor[1] : curr_coor[3],
-                    curr_coor[0] : curr_coor[2],
-                ] = curr_BERT_embedding
+                    int(curr_coor[1] / self.stride) : int(curr_coor[3] / self.stride),
+                    int(curr_coor[0] / self.stride) : int(curr_coor[2] / self.stride),
+                ] = curr_BERT_embedding[None, :, None, None]
 
         return BERTgrid
 
@@ -247,7 +246,7 @@ class BERTgridGenerator(nn.Module):
         seg_indices: Tuple[torch.Tensor],
         corpus: torch.Tensor,
         mask: torch.Tensor,
-        coor: torch.Tensor,
+        coor: Tuple[torch.Tensor],
     ) -> Tuple[torch.Tensor]:
         """forward propagation
 
@@ -285,34 +284,63 @@ class BERTgridGenerator(nn.Module):
 
 
 if __name__ == "__main__":
-    import sys
-
-    sys.path.append("..")
+    import argparse
+    import matplotlib.pyplot as plt
 
     from data.SROIE_dataset import load_train_dataset
     from utils.ViBERTgrid_visualize import ViBERTgrid_visualize
+    from pipeline.transform import GeneralizedViBERTgridTransform
     from transformers import BertTokenizer, BertModel
 
-    RESIZE_SHAPE = (336, 256)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root")
+    args = parser.parse_args()
 
-    dir_processed = r"dir_to_data"
-    model_version = "bert-base-uncased"
+    image_mean = [0.9248, 0.9224, 0.9215]
+    image_std = [0.1532, 0.1545, 0.1536]
+    image_min_size = [320, 416, 512, 608, 704]
+    test_image_min_size = 500
+    image_max_size = 800
+
+    dir_processed = args.root
+    model_version = "./private_bert-base-uncased"
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     model = BertModel.from_pretrained(model_version)
 
     train_loader, val_loader = load_train_dataset(
-        dir_processed, batch_size=4, num_workers=0, tokenizer=tokenizer
+        dir_processed, batch_size=2, num_workers=0, tokenizer=tokenizer
+    )
+    transform = GeneralizedViBERTgridTransform(
+        image_mean=image_mean,
+        image_std=image_std,
+        train_min_size=image_min_size,
+        test_min_size=test_image_min_size,
+        max_size=image_max_size,
     )
 
-    for img, class_label, pos_neg_label, coor, corpus, mask in train_loader:
-        ViBERTgrid_generator = BERTgridGenerator(
-            bert_model=model, pipeline_mode="train", grid_mode="mean", stride=8
-        )
-        ViBERTgrid_generator = ViBERTgrid_generator.to(device)
+    img, seg_indices, token_classes, coor, corpus, mask = next(iter(train_loader))
+    ViBERTgrid_generator = BERTgridGenerator(
+        bert_model=model, grid_mode="mean", stride=8
+    )
 
-        BERTgrid = ViBERTgrid_generator(corpus, mask, coor)
+    ViBERTgrid_generator = ViBERTgrid_generator.to(device)
 
-        print(BERTgrid.shape)
-        ViBERTgrid_visualize(BERTgrid)
+    img_convert = list(img)
+
+    img, coor = transform(img, coor)
+
+    BERT_embeddings, BERTgrid_embeddings = ViBERTgrid_generator(
+        img.tensors.shape[-2:], seg_indices, corpus, mask, coor
+    )
+
+    num_pic = BERTgrid_embeddings.shape[0]
+    img_convert = [img.permute(1, 2, 0).detach().numpy() for img in img_convert]
+    grid_convert = torch.mean(BERTgrid_embeddings.float(), dim=1).detach().numpy()
+    grid_convert *= 255
+    for i in range(num_pic):
+        curr_grid = grid_convert[i]
+        curr_img = img_convert[i]
+        plt.imsave(f"./temp/orig_img{i}.jpg", curr_img)
+        plt.imsave(f"./temp/BERTgrid_{i}.jpg", curr_grid)

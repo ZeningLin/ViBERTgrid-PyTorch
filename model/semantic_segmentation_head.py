@@ -169,7 +169,7 @@ class SemanticSegmentationClassifier(nn.Module):
                 pos_neg_labels[
                     batch_index,
                     curr_coors[1] : curr_coors[3],
-                    curr_coors[0] : curr_coors[4],
+                    curr_coors[0] : curr_coors[2],
                 ] = (
                     1 if curr_class > 0 else 2
                 )

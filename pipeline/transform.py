@@ -198,7 +198,7 @@ class GeneralizedViBERTgridTransform(nn.Module):
         orig_shape = image.shape[-2:]
         image = self._resize_image(image, size, float(self.max_size))
         resize_shape = image.shape[-2:]
-        coor = self._resize_labels(coor, resize_shape, orig_shape)
+        coor = self._resize_labels(coor, orig_shape, resize_shape)
 
         return image, coor, resize_shape
 
