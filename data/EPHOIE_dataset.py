@@ -121,22 +121,17 @@ class EPHOIEDataset(Dataset):
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
             seg_classes.append(row["data_class"])
 
-        ocr_coor_expand = []
         ocr_tokens = []
-        seg_classes_expand = []
         seg_indices = []
         ocr_text_filter = []
         for seg_index, (text, coor, seg_class) in zip(ocr_text, ocr_coor, seg_classes):
             if text == "":
                 continue
+            ocr_text_filter.append(text)
             curr_tokens = self.tokenizer.tokenize(text)
             for i in range(len(curr_tokens)):
-                ocr_coor_expand.append(coor)
                 ocr_tokens.append(curr_tokens[i])
-                seg_classes_expand.append(seg_class)
                 seg_indices.append(seg_index)
-                if self.train == False:
-                    ocr_text_filter.append(text)
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
@@ -144,16 +139,16 @@ class EPHOIEDataset(Dataset):
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
-                torch.tensor(seg_classes_expand, dtype=torch.int),
-                torch.tensor(ocr_coor_expand, dtype=torch.long),
+                torch.tensor(seg_classes, dtype=torch.int),
+                torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
-                torch.tensor(seg_classes_expand, dtype=torch.int),
-                torch.tensor(ocr_coor_expand, dtype=torch.long),
+                torch.tensor(seg_classes, dtype=torch.int),
+                torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
             )
@@ -175,7 +170,6 @@ class EPHOIEDataset(Dataset):
                 ocr_text.append(item[5])
 
         # pad sequence to generate mini-batch
-        ocr_coors = pad_sequence(ocr_coors, batch_first=True)
         ocr_corpus = pad_sequence(ocr_corpus, batch_first=True)
         # add mask to indicate valid corpus
         mask = torch.zeros(ocr_corpus.shape, dtype=torch.long)
@@ -186,7 +180,7 @@ class EPHOIEDataset(Dataset):
                 tuple(imgs),
                 tuple(seg_indices),
                 tuple(token_classes),
-                ocr_coors.int(),
+                tuple(ocr_coors),
                 ocr_corpus,
                 mask.int(),
             )
@@ -195,7 +189,7 @@ class EPHOIEDataset(Dataset):
                 tuple(imgs),
                 tuple(seg_indices),
                 tuple(token_classes),
-                ocr_coors.int(),
+                tuple(ocr_coors),
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
