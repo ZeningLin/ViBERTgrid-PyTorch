@@ -159,6 +159,7 @@ def train_one_epoch(
     weight_decay_scheduler_cnn: Any,
     lr_scheduler_bert: Any,
     weight_decay_scheduler_bert: Any,
+    distributed: bool = True,
     logger: TensorboardLogger = None,
     scaler: torch.cuda.amp.GradScaler = None,
 ):
@@ -281,6 +282,9 @@ def train_one_epoch(
             optimizer_cnn.step()
             optimizer_bert.step()
 
+        if distributed:
+            torch.distributed.barrier()
+
         end_time = time.time()
         time_iter = end_time - start_time
         start_time = end_time
@@ -392,7 +396,7 @@ def validate(
         image_list = tuple(image.to(device) for image in image_list)
         seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
         token_classes = tuple(token_class.to(device) for token_class in token_classes)
-        ocr_coors = ocr_coors.to(device)
+        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
