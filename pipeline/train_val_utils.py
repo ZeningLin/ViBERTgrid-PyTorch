@@ -254,7 +254,7 @@ def train_one_epoch(
         image_list = tuple(image.to(device) for image in image_list)
         seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
         token_classes = tuple(token_class.to(device) for token_class in token_classes)
-        ocr_coors = ocr_coors.to(device)
+        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
@@ -502,7 +502,7 @@ def inference_once(
     image_list = tuple(image.to(device) for image in image_list)
     class_labels = tuple(class_label.to(device) for class_label in class_labels)
     pos_neg_labels = tuple(pos_neg_label.to(device) for pos_neg_label in pos_neg_labels)
-    ocr_coors = ocr_coors.to(device)
+    ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
     ocr_corpus = ocr_corpus.to(device)
     mask = mask.to(device)
 

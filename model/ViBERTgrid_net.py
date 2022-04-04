@@ -325,7 +325,7 @@ class ViBERTgridNet(nn.Module):
 
         # Word-level Field Type Classification Head
         # roi align
-        roi_features = self.grid_roi_align_net(image_shape, p_fuse_features, coors, None)
+        roi_features = self.grid_roi_align_net(p_fuse_features, coors, None)
         # late fusion
         late_fuse_embeddings = self.late_fusion_net(roi_features, BERT_embeddings)
         # field type classification
