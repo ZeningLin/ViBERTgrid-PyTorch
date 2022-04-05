@@ -190,20 +190,20 @@ def train(args):
 
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
-    lr_schedule_values_cnn = cosine_scheduler(
-        base_value=learning_rate_cnn,
-        final_value=min_learning_rate_cnn,
-        epoches=end_epoch,
-        niter_per_ep=num_training_steps_per_epoch,
-        warmup_epoches=warm_up_epoches_cnn,
-        start_warmup_value=warm_up_init_lr_cnn,
-        warmup_steps=-1,
+    #lr_schedule_values_cnn = cosine_scheduler(
+    #    base_value=learning_rate_cnn,
+    #    final_value=min_learning_rate_cnn,
+    #    epoches=end_epoch,
+    #    niter_per_ep=num_training_steps_per_epoch,
+    #    warmup_epoches=warm_up_epoches_cnn,
+    #    start_warmup_value=warm_up_init_lr_cnn,
+    #    warmup_steps=-1,
+    #)
+    lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
+        optimizer=optimizer_cnn,
+        step_size = 15,
+        gamma = 0.1
     )
-    # lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
-    #     optimizer=optimizer_cnn,
-    #     step_size = 40,
-    #     gamma = 0.1
-    # )
     wd_schedule_values_cnn = cosine_scheduler(
         base_value=weight_decay_cnn,
         final_value=min_weight_decay_cnn,
@@ -211,20 +211,20 @@ def train(args):
         niter_per_ep=num_training_steps_per_epoch,
     )
 
-    lr_schedule_values_bert = cosine_scheduler(
-        base_value=learning_rate_bert,
-        final_value=min_learning_rate_bert,
-        epoches=end_epoch,
-        niter_per_ep=num_training_steps_per_epoch,
-        warmup_epoches=warm_up_epoches_bert,
-        start_warmup_value=warm_up_init_lr_bert,
-        warmup_steps=-1,
+    #lr_schedule_values_bert = cosine_scheduler(
+    #    base_value=learning_rate_bert,
+    #    final_value=min_learning_rate_bert,
+    #    epoches=end_epoch,
+    #    niter_per_ep=num_training_steps_per_epoch,
+    #    warmup_epoches=warm_up_epoches_bert,
+    #    start_warmup_value=warm_up_init_lr_bert,
+    #    warmup_steps=-1,
+    #)
+    lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
+        optimizer=optimizer_bert,
+        step_size = 15,
+        gamma = 0.1
     )
-    # lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
-    #     optimizer=optimizer_bert,
-    #     step_size = 50,
-    #     gamma = 0.1
-    # )
     wd_schedule_values_bert = cosine_scheduler(
         base_value=weight_decay_bert,
         final_value=min_weight_decay_bert,
