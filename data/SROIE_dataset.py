@@ -1,5 +1,5 @@
 import os
-import warnings
+import json
 
 # import pysnooper
 from tqdm import tqdm
@@ -135,6 +135,11 @@ class SROIEDataset(Dataset):
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
+            dir_key = os.path.join(self.root, "key", file.replace(".jpg", ".json"))
+            with open(dir_key, "r") as key_f:
+                key_dict = json.load(key_f)
+                key_dict.update({"filename": file.replace(".jpg", "")})
+
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
@@ -142,6 +147,7 @@ class SROIEDataset(Dataset):
                 torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
+                key_dict,
             )
 
     def _ViBERTgrid_coll_func(self, samples):
@@ -151,6 +157,7 @@ class SROIEDataset(Dataset):
         ocr_coors = []
         ocr_corpus = []
         ocr_text = []
+        key_dict_list = []
         for item in samples:
             imgs.append(item[0])
             seg_indices.append(item[1])
@@ -159,6 +166,7 @@ class SROIEDataset(Dataset):
             ocr_corpus.append(item[4])
             if self.train == False:
                 ocr_text.append(item[5])
+                key_dict_list.append(item[6])
 
         # pad sequence to generate mini-batch
         ocr_corpus = pad_sequence(ocr_corpus, batch_first=True)
@@ -184,6 +192,7 @@ class SROIEDataset(Dataset):
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
+                tuple(key_dict_list),
             )
 
 
@@ -332,7 +341,13 @@ def load_test_data(
 
 
 if __name__ == "__main__":
-    dir_processed = r"dir_to_root"
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root")
+    args = parser.parse_args()
+
+    dir_processed = args.root
     model_version = "bert-base-uncased"
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)

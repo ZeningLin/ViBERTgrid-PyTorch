@@ -391,6 +391,7 @@ def validate(
             ocr_corpus,
             mask,
             _,
+            _,
         ) = validate_batch
 
         image_list = tuple(image.to(device) for image in image_list)
@@ -490,6 +491,7 @@ def inference_once(
         ocr_corpus,
         mask,
         ocr_text,
+        _
     ) = batch
 
     assert (

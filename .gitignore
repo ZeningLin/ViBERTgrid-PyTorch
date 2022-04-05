@@ -8,6 +8,7 @@ weights/
 config/
 log/
 traced/
+result/
 
 private_*
 private/
