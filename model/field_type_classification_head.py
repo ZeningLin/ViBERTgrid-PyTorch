@@ -228,8 +228,8 @@ class FieldTypeClassificationSimplified(nn.Module):
         # pred_class[~pred_pos_neg_mask] = 0
 
         return (
-            # pos_neg_classification_loss_val + classification_loss_val,
-            classification_loss_val,
+            pos_neg_classification_loss_val + classification_loss_val,
+            # classification_loss_val,
             label_class.int(),
             pred_class,
         )
