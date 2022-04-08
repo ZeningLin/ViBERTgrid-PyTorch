@@ -22,15 +22,15 @@ def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor]):
     gt_label = torch.cat(list(pred_gt_dict.values()), dim=0)
 
     num_classes = pred_label.shape[1]
-    pred_label = pred_label.argmax(dim=1).int()
+    pred_label = pred_label.argmax.int()
 
     result_dict = dict()
     for class_index in range(num_classes):
         curr_gt_index = gt_label == class_index
-        TP = (pred_label[curr_gt_index] == class_index).int().sum().item()
-        TN = (pred_label[~curr_gt_index] != class_index).int().sum().item()
-        FP = (pred_label[~curr_gt_index] == class_index).int().sum().item()
-        FN = (pred_label[curr_gt_index] != class_index).int().sum().item()
+        TP = (pred_label[curr_gt_index, class_index] == 1).int().sum().item()
+        TN = (pred_label[~curr_gt_index, class_index] == 0).int().sum().item()
+        FP = (pred_label[~curr_gt_index, class_index] == 1).int().sum().item()
+        FN = (pred_label[curr_gt_index, class_index] == 0).int().sum().item()
 
         curr_precision = TP / (TP + FP + 1e-8)
         curr_recall = TP / (TP + FN + 1e-8)

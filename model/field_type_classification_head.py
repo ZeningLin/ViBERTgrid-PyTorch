@@ -1,9 +1,20 @@
 import torch
 import torch.nn as nn
 
-from pipeline.custom_loss import CrossEntropyLossOHEM
+from pipeline.custom_loss import CrossEntropyLossOHEM, BCELossOHEM
 
 from typing import Optional, Tuple, List, Any
+
+
+class AttrProxy(object):
+    """Translates index lookups into attribute lookups."""
+
+    def __init__(self, module, prefix):
+        self.module = module
+        self.prefix = prefix
+
+    def __getitem__(self, i):
+        return getattr(self.module, self.prefix + str(i))
 
 
 class ROIEmbedding(nn.Module):
@@ -56,6 +67,18 @@ class SingleLayer(nn.Module):
 
     def forward(self, x):
         return self.linear(x)
+
+
+class BinaryClassifier(nn.Module):
+    def __init__(self, in_channels, bias: bool = True) -> None:
+        super().__init__()
+        self.linear = nn.Linear(in_features=in_channels, out_features=1, bias=bias)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.linear(x)
+        x = self.sigmoid(x)
+        return x
 
 
 class LateFusion(nn.Module):
@@ -155,26 +178,40 @@ class FieldTypeClassificationSimplified(nn.Module):
         super().__init__()
         self.num_classes = num_classes
         self.fuse_embedding_channel = fuse_embedding_channel
-        self.pos_neg_classification_net = SingleLayer(
-            in_channels=fuse_embedding_channel, out_channels=2, bias=True
+
+        self.pos_neg_classification_net = BinaryClassifier(
+            in_channels=fuse_embedding_channel, bias=True
         )
-        self.category_classification_net = SingleLayer(
-            in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
+
+        self.pos_neg_classification_loss = BCELossOHEM(
+            num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
         )
-        self.pos_neg_classification_loss = CrossEntropyLossOHEM(
-        num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
-        )
-        if loss_weights is not None:
-            self.field_type_classification_loss = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive_2,
-                num_hard_negative=num_hard_negative_2,
-                weight=loss_weights,
+
+        for idx in range(self.num_classes - 1):
+            self.add_module(
+                f"category_classification_net_{idx}",
+                BinaryClassifier(in_channels=fuse_embedding_channel, bias=True),
             )
-        else:
-            self.field_type_classification_loss = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive_2,
-                num_hard_negative=num_hard_negative_2,
-            )
+            if loss_weights is not None:
+                self.add_module(
+                    f"field_type_classification_loss_{idx}",
+                    BCELossOHEM(
+                        num_hard_positive=num_hard_positive_2,
+                        num_hard_negative=num_hard_negative_2,
+                        weight=loss_weights,
+                    ),
+                )
+            else:
+                self.add_module(
+                    f"field_type_classification_loss_{idx}",
+                    BCELossOHEM(
+                        num_hard_positive=num_hard_positive_2,
+                        num_hard_negative=num_hard_negative_2,
+                    ),
+                )
+        
+        self.category_classification_net = AttrProxy(self, "category_classification_net_")
+        self.field_type_classification_loss = AttrProxy(self, "field_type_classification_loss_")
 
     def forward(
         self,
@@ -202,34 +239,50 @@ class FieldTypeClassificationSimplified(nn.Module):
         """
         device = fuse_embeddings.device
 
-        label_class = torch.cat(segment_classes, dim=0).to(device).long()
-        label_pos_neg = (label_class > 0).long()
+        segment_classes: torch.Tensor = (
+            torch.cat(segment_classes, dim=0).to(device).long()
+        )
+        label_pos_neg = segment_classes > 0
 
-        # (bs*seq_len)
+        # (bs*seq_len, 1024)
         fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
-        assert fuse_embeddings.shape[0] == label_class.shape[0]
+        assert fuse_embeddings.shape[0] == segment_classes.shape[0]
 
-        # (pure_len, 2)
-        pred_pos_neg = self.pos_neg_classification_net(fuse_embeddings)
+        # (pure_len, 1)
+        pred_pos_neg: torch.Tensor
+        pred_pos_neg = self.pos_neg_classification_net(fuse_embeddings).squeeze(1)
         pos_neg_classification_loss_val = self.pos_neg_classification_loss(
-            pred_pos_neg, label_pos_neg
+            pred_pos_neg, label_pos_neg.float()
         )
         # (pure_len)
-        pred_pos_neg_mask = torch.argmax(pred_pos_neg.detach(), dim=1)
+        pred_pos_neg_mask = pred_pos_neg.ge(0.5)
+        pos_fuse_embeddings = fuse_embeddings[pred_pos_neg_mask]
 
-        # (pure_len, field_types)
-        pred_class: torch.Tensor
-        pred_class = self.category_classification_net(fuse_embeddings)
-        classification_loss_val = self.field_type_classification_loss(
-            # pred_class[pred_pos_neg_mask], label_class[pred_pos_neg_mask]
-            pred_class,
-            label_class,
+        class_pred = torch.zeros(
+            (fuse_embeddings.shape[0], self.num_classes), dtype=torch.int, device=device
         )
-        # pred_class[~pred_pos_neg_mask] = 0
+        class_pred[:, 0][~pred_pos_neg_mask] = 1
+        classification_loss_val = torch.zeros((1,), device=device)
+
+        if pos_fuse_embeddings.shape[0] != 0:
+            for class_index in range(self.num_classes - 1):
+                curr_class_pred: torch.Tensor = self.category_classification_net[
+                    class_index
+                ](pos_fuse_embeddings).squeeze(1)
+                curr_class_label = segment_classes[pred_pos_neg_mask] == (
+                    class_index + 1
+                )
+                classification_loss_val += self.field_type_classification_loss[
+                    class_index
+                ](curr_class_pred, curr_class_label.float())
+
+                class_pred[:, class_index + 1][pred_pos_neg_mask] = curr_class_pred.ge(
+                    0.5
+                ).int()
 
         return (
             pos_neg_classification_loss_val + classification_loss_val,
             # classification_loss_val,
-            label_class.int(),
-            pred_class,
+            segment_classes.int(),
+            class_pred,
         )

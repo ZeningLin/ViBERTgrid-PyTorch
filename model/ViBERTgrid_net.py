@@ -19,7 +19,7 @@ from model.field_type_classification_head import (
     FieldTypeClassificationSimplified,
     LateFusion,
 )
-from model.semantic_segmentation_head import SemanticSegmentationClassifier
+from model.semantic_segmentation_head import SemanticSegmentationClassification
 from pipeline.transform import GeneralizedViBERTgridTransform, ImageList
 
 
@@ -165,6 +165,7 @@ class ViBERTgridNet(nn.Module):
 
         # bert-model stuff
         self.bert_model_list = {
+            "private_bert-base-uncased": 768,
             "bert-base-uncased": 768,
             "bert-base-cased": 768,
             "roberta-base": 768,
@@ -276,7 +277,7 @@ class ViBERTgridNet(nn.Module):
             num_hard_negative_2=num_hard_negative_main_2,
         )
 
-        self.semantic_segmentation_head = SemanticSegmentationClassifier(
+        self.semantic_segmentation_head = SemanticSegmentationClassification(
             p_fuse_channel=self.p_fuse_channel,
             num_classes=self.num_classes,
             loss_weights=self.loss_weights,
@@ -352,7 +353,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    bert_version = "bert-base-uncased"
+    bert_version = "private_bert-base-uncased"
 
     tokenizer = BertTokenizer.from_pretrained(bert_version)
 
@@ -378,7 +379,7 @@ if __name__ == "__main__":
         loss_aux_sample_list=[128, 256, 128],
         num_hard_positive_aux=2,
         num_hard_negative_aux=2,
-        bert_model=bert_version
+        bert_model=bert_version,
     )
     model = model.to(device)
 
@@ -391,12 +392,12 @@ if __name__ == "__main__":
     ocr_corpus = ocr_corpus.to(device)
     mask = mask.to(device)
 
-    model.train()
-    total_loss = model(
-        image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-    )
+    # model.train()
+    # total_loss = model(
+    #     image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+    # )
 
-    total_loss.backward()
+    # total_loss.backward()
 
     model.eval()
     total_loss, pred_mask, pred_ss, gt_label, pred_label = model(

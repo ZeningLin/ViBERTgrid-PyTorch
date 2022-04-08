@@ -1,8 +1,23 @@
 import torch
 import torch.nn as nn
 
-from pipeline.custom_loss import CrossEntropyLossRandomSample, CrossEntropyLossOHEM
+from pipeline.custom_loss import (
+    CrossEntropyLossRandomSample,
+    CrossEntropyLossOHEM,
+    BCELossOHEM,
+)
 from typing import List, Tuple
+
+
+class AttrProxy(object):
+    """Translates index lookups into attribute lookups."""
+
+    def __init__(self, module, prefix):
+        self.module = module
+        self.prefix = prefix
+
+    def __getitem__(self, i):
+        return getattr(self.module, self.prefix + str(i))
 
 
 class SemanticSegmentationEncoder(nn.Module):
@@ -63,7 +78,19 @@ class SemanticSegmentationEncoder(nn.Module):
         return x_1, x_2
 
 
-class SemanticSegmentationClassifier(nn.Module):
+class SemanticSegmentationBinaryClassifier(nn.Module):
+    def __init__(self, in_channels: int) -> None:
+        super().__init__()
+        self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.sigmoid(x)
+        return x
+
+
+class SemanticSegmentationClassification(nn.Module):
     """a simplified version of auxiliary semantic segmentation head,
        apply two multi-class classification to the feature map
 
@@ -93,27 +120,36 @@ class SemanticSegmentationClassifier(nn.Module):
         num_hard_negative: int = -1,
     ) -> None:
         super().__init__()
-        self.semantic_segmentation_encoder = SemanticSegmentationEncoder(
+        self.num_classes = num_classes
+        self.ss_encoder = SemanticSegmentationEncoder(
             fuse_channel=p_fuse_channel, num_classes=num_classes
         )
+        self.aux_loss_1 = CrossEntropyLossRandomSample(sample_list=loss_1_sample_list)
 
-        if loss_weights is not None:
-            self.aux_loss_1 = CrossEntropyLossRandomSample(
-                sample_list=loss_1_sample_list
+        for idx in range(self.num_classes - 1):
+            self.add_module(
+                f"ss_binary_classifier_{idx}",
+                SemanticSegmentationBinaryClassifier(in_channels=num_classes),
             )
-            self.aux_loss_2 = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive,
-                num_hard_negative=num_hard_negative,
-                weight=loss_weights,
-            )
-        else:
-            self.aux_loss_1 = CrossEntropyLossRandomSample(
-                sample_list=loss_1_sample_list
-            )
-            self.aux_loss_2 = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive,
-                num_hard_negative=num_hard_negative,
-            )
+            if loss_weights is not None:
+                self.add_module(
+                    f"aux_loss_2_{idx}",
+                    BCELossOHEM(
+                        num_hard_positive=num_hard_positive,
+                        num_hard_negative=num_hard_negative,
+                        weight=loss_weights,
+                    ),
+                )
+            else:
+                self.add_module(
+                    f"aux_loss_2_{idx}",
+                    BCELossOHEM(
+                        num_hard_positive=num_hard_positive,
+                        num_hard_negative=num_hard_negative,
+                    ),
+                )
+        self.ss_binary_classifier = AttrProxy(self, "ss_binary_classifier_")
+        self.aux_loss_2 = AttrProxy(self, "aux_loss_2_")
 
     def forward(
         self,
@@ -145,7 +181,7 @@ class SemanticSegmentationClassifier(nn.Module):
 
         x_out_1: torch.Tensor
         x_out_2: torch.Tensor
-        x_out_1, x_out_2 = self.semantic_segmentation_encoder(fuse_feature)
+        x_out_1, x_out_2 = self.ss_encoder(fuse_feature)
 
         batch_size = x_out_1.shape[0]
         feat_shape = x_out_1.shape[-2:]
@@ -180,10 +216,18 @@ class SemanticSegmentationClassifier(nn.Module):
                 ] = curr_class
 
         aux_loss_1_val = self.aux_loss_1(x_out_1, pos_neg_labels)
-        aux_loss_2_val = self.aux_loss_2(
-            x_out_2,
-            class_labels,
-        )
+
+        pos_mask = x_out_1.softmax(dim=1).argmax(dim=1) == 1
+
+        aux_loss_2_val = torch.zeros((1,), device=device)
+        if pos_mask.int().sum() != 0:
+            for class_index in range(self.num_classes - 1):
+                curr_class_pred = self.ss_binary_classifier[class_index](x_out_2)
+                curr_class_pred = curr_class_pred[pos_mask.unsqueeze(1)]
+                curr_class_label = (class_labels[pos_mask] == (class_index + 1)).float()
+                aux_loss_2_val += self.aux_loss_2[class_index](
+                    curr_class_pred, curr_class_label
+                )
 
         del class_labels
         del pos_neg_labels
