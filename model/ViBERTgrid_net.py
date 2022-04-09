@@ -347,6 +347,7 @@ if __name__ == "__main__":
 
     from transformers import BertTokenizer, BertModel
     from data.SROIE_dataset import load_train_dataset
+    from pipeline.criteria import token_F1_criteria
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=str, help="dir to data root")
@@ -403,5 +404,6 @@ if __name__ == "__main__":
     total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
         image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
     )
+    eval_result = token_F1_criteria({pred_label: gt_label})
 
-    print("debug finished, total_loss = {}".format(total_loss.item()))
+    print("debug finished, total_loss = {} result: {}".format(total_loss.item(), eval_result))

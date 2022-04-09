@@ -190,7 +190,7 @@ def train(args):
 
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
-    #lr_schedule_values_cnn = cosine_scheduler(
+    # lr_schedule_values_cnn = cosine_scheduler(
     #    base_value=learning_rate_cnn,
     #    final_value=min_learning_rate_cnn,
     #    epoches=end_epoch,
@@ -198,11 +198,9 @@ def train(args):
     #    warmup_epoches=warm_up_epoches_cnn,
     #    start_warmup_value=warm_up_init_lr_cnn,
     #    warmup_steps=-1,
-    #)
+    # )
     lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
-        optimizer=optimizer_cnn,
-        step_size = 15,
-        gamma = 0.1
+        optimizer=optimizer_cnn, step_size=15, gamma=0.1
     )
     wd_schedule_values_cnn = cosine_scheduler(
         base_value=weight_decay_cnn,
@@ -211,7 +209,7 @@ def train(args):
         niter_per_ep=num_training_steps_per_epoch,
     )
 
-    #lr_schedule_values_bert = cosine_scheduler(
+    # lr_schedule_values_bert = cosine_scheduler(
     #    base_value=learning_rate_bert,
     #    final_value=min_learning_rate_bert,
     #    epoches=end_epoch,
@@ -219,11 +217,9 @@ def train(args):
     #    warmup_epoches=warm_up_epoches_bert,
     #    start_warmup_value=warm_up_init_lr_bert,
     #    warmup_steps=-1,
-    #)
+    # )
     lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
-        optimizer=optimizer_bert,
-        step_size = 15,
-        gamma = 0.1
+        optimizer=optimizer_bert, step_size=15, gamma=0.1
     )
     wd_schedule_values_bert = cosine_scheduler(
         base_value=weight_decay_bert,
@@ -280,7 +276,7 @@ def train(args):
             )
 
     print(f"==> Initial validation")
-    classification_acc, F1 = validate(
+    F1 = validate(
         model=model,
         validate_loader=val_loader,
         device=device,
@@ -288,7 +284,6 @@ def train(args):
         logger=logger,
     )
 
-    top_acc = 0
     top_F1_tresh = 0.92
     top_F1 = 0
     print(f"==> start training")
@@ -316,7 +311,7 @@ def train(args):
         )
 
         print(f"==> validating epoch {epoch + 1}/{end_epoch - start_epoch}")
-        classification_acc, F1 = validate(
+        F1 = validate(
             model=model,
             validate_loader=val_loader,
             device=device,
@@ -327,17 +322,12 @@ def train(args):
         if F1 > top_F1:
             top_F1 = F1
 
-        if classification_acc > top_acc:
-            top_acc = classification_acc
-
         if F1 > top_F1_tresh or (epoch % 400 == 0 and epoch != start_epoch):
             top_F1_tresh = F1
             if save_top is not None:
                 if not os.path.exists(save_top) and is_main_process():
                     os.mkdir(save_top)
-                print(
-                    f"==> top criteria found, saving model |epoch[{epoch}]|F1[{F1}]|acc[{classification_acc}]|"
-                )
+                print(f"==> top criteria found, saving model |epoch[{epoch}]|F1[{F1}]|")
                 save_files = {
                     "model": model.state_dict(),
                     "optimizer_cnn": optimizer_cnn.state_dict(),
@@ -369,7 +359,7 @@ def train(args):
                     os.path.join(
                         save_top,
                         f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
-                        f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
+                        f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_time-{curr_time_h}.pth",
                     ),
                 )
 
@@ -377,7 +367,7 @@ def train(args):
             if logger is not None:
                 logger.flush()
 
-    print(f"top_F1: {top_F1:.4f}  top_acc: {top_acc:.4f}")
+    print(f"top_F1: {top_F1:.4f}")
 
 
 if __name__ == "__main__":

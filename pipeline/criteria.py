@@ -22,7 +22,7 @@ def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor]):
     gt_label = torch.cat(list(pred_gt_dict.values()), dim=0)
 
     num_classes = pred_label.shape[1]
-    pred_label = pred_label.argmax.int()
+    pred_label = pred_label.int()
 
     result_dict = dict()
     for class_index in range(num_classes):
@@ -49,11 +49,7 @@ def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor]):
         }
         result_dict.update({class_index: curr_class_dict})
 
-    num_correct = (pred_label == gt_label).int().sum()
-    num_total = gt_label.shape[0]
     result_dict.update({"num_classes": num_classes})
-    result_dict.update({"num_correct": num_correct})
-    result_dict.update({"num_total": num_total})
 
     return result_dict
 

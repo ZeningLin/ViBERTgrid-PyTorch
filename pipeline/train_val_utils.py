@@ -368,7 +368,6 @@ def validate(
             "\t",
             "epoch[{epoch}]",
             "validate_loss: {val_loss}",
-            "classification_acc: {acc:.4f}%",
             "token_marco_precision: {precision:.4f}",
             "token_marco_recall: {recall:.4f}",
             "token_marco_F1: {F1:.4f}",
@@ -434,9 +433,6 @@ def validate(
     result_dict: Dict
     result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
     num_classes = result_dict["num_classes"]
-    num_correct = result_dict["num_correct"]
-    num_total = result_dict["num_total"]
-    acc = num_correct / num_total
     marco_precision = 0.0
     marco_recall = 0.0
     marco_F1 = 0.0
@@ -458,7 +454,6 @@ def validate(
         log_message.format(
             epoch=(epoch + 1),
             val_loss=validate_loss_value,
-            acc=acc,
             precision=marco_precision,
             recall=marco_recall,
             F1=marco_F1,
@@ -469,12 +464,11 @@ def validate(
 
     if logger is not None:
         logger.update(head="loss", validate_loss=validate_loss_value, step=epoch + 1)
-        logger.update(head="criteria", label_classification_acc=acc, step=epoch + 1)
         logger.update(head="criteria", label_precision=marco_precision, step=epoch + 1)
         logger.update(head="criteria", label_recall=marco_recall, step=epoch + 1)
         logger.update(head="criteria", label_F1=marco_F1, step=epoch + 1)
 
-    return acc, marco_F1
+    return marco_F1
 
 
 @torch.no_grad()

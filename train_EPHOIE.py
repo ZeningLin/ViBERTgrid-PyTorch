@@ -242,7 +242,7 @@ def train(args):
             )
 
     print(f"==> Initial validation")
-    classification_acc, F1 = validate(
+    F1 = validate(
         model=model,
         validate_loader=val_loader,
         device=device,
@@ -250,7 +250,6 @@ def train(args):
         logger=logger,
     )
 
-    top_acc = 0
     top_F1_tresh = 0.97
     top_F1 = 0
     print(f"==> start training")
@@ -278,7 +277,7 @@ def train(args):
         )
 
         print(f"==> validating epoch {epoch + 1}/{end_epoch - start_epoch}")
-        classification_acc, F1 = validate(
+        F1 = validate(
             model=model,
             validate_loader=val_loader,
             device=device,
@@ -289,17 +288,12 @@ def train(args):
         if F1 > top_F1:
             top_F1 = F1
 
-        if classification_acc > top_acc:
-            top_acc = classification_acc
-
         if F1 > top_F1_tresh or (epoch % 400 == 0 and epoch != start_epoch):
             top_F1_tresh = F1
             if save_top is not None:
                 if not os.path.exists(save_top) and is_main_process():
                     os.mkdir(save_top)
-                print(
-                    f"==> top criteria found, saving model |epoch[{epoch}]|F1[{F1}]|acc[{classification_acc}]|"
-                )
+                print(f"==> top criteria found, saving model |epoch[{epoch}]|F1[{F1}]|")
                 save_files = {
                     "model": model.state_dict(),
                     "optimizer_cnn": optimizer_cnn.state_dict(),
@@ -331,7 +325,7 @@ def train(args):
                     os.path.join(
                         save_top,
                         f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
-                        f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
+                        f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_epoch-{epoch}_F1-{F1}_time-{curr_time_h}.pth",
                     ),
                 )
 
@@ -339,7 +333,7 @@ def train(args):
             if logger is not None:
                 logger.flush()
 
-    print(f"top_F1: {top_F1:.4f}  top_acc: {top_acc:.4f}")
+    print(f"top_F1: {top_F1:.4f}")
 
 
 if __name__ == "__main__":
