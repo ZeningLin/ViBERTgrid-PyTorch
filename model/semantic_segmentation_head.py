@@ -82,11 +82,9 @@ class SemanticSegmentationBinaryClassifier(nn.Module):
     def __init__(self, in_channels: int) -> None:
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.conv1(x)
-        x = self.sigmoid(x)
         return x
 
 

@@ -205,14 +205,14 @@ class BCELossRandomSample(nn.BCELoss):
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.sample_list is None:
-            return F.binary_cross_entropy(
+            return F.binary_cross_entropy_with_logits(
                 input,
                 target,
                 weight=self.weight,
                 reduction=self.reduction,
             )
 
-        ce_loss = F.binary_cross_entropy(
+        ce_loss = F.binary_cross_entropy_with_logits(
             input,
             target,
             weight=self.weight,
@@ -287,14 +287,14 @@ class BCELossOHEM(nn.BCELoss):
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.num_hard_positive == -1 and self.num_hard_negative == -1:
-            return F.binary_cross_entropy(
+            return F.binary_cross_entropy_with_logits(
                 input,
                 target,
                 weight=self.weight,
                 reduction=self.reduction,
             )
 
-        ce_loss = F.binary_cross_entropy(
+        ce_loss = F.binary_cross_entropy_with_logits(
             input,
             target,
             weight=self.weight,

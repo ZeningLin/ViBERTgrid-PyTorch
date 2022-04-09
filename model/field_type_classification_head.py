@@ -73,11 +73,9 @@ class BinaryClassifier(nn.Module):
     def __init__(self, in_channels, bias: bool = True) -> None:
         super().__init__()
         self.linear = nn.Linear(in_features=in_channels, out_features=1, bias=bias)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.linear(x)
-        x = self.sigmoid(x)
         return x
 
 
@@ -255,7 +253,7 @@ class FieldTypeClassificationSimplified(nn.Module):
             pred_pos_neg, label_pos_neg.float()
         )
         # (pure_len)
-        pred_pos_neg_mask = pred_pos_neg.ge(0.5)
+        pred_pos_neg_mask = pred_pos_neg.detach().sigmoid().ge(0.5)
         pos_fuse_embeddings = fuse_embeddings[pred_pos_neg_mask]
 
         class_pred = torch.zeros(
