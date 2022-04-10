@@ -124,7 +124,7 @@ class EPHOIEDataset(Dataset):
         ocr_tokens = []
         seg_indices = []
         ocr_text_filter = []
-        for seg_index, (text, coor, seg_class) in zip(ocr_text, ocr_coor, seg_classes):
+        for seg_index, text in enumerate(ocr_text):
             if text == "":
                 continue
             ocr_text_filter.append(text)
@@ -193,6 +193,7 @@ class EPHOIEDataset(Dataset):
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
+                None,
             )
 
 
