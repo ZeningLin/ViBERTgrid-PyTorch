@@ -16,7 +16,7 @@ from model.BERTgrid_generator import BERTgridGenerator
 from model.grid_roi_align import GridROIAlign
 from model.ResNetFPN_ViBERTgrid import resnet_18_fpn
 from model.field_type_classification_head import (
-    FieldTypeClassificationSimplified,
+    FieldTypeClassification,
     LateFusion,
 )
 from model.semantic_segmentation_head import SemanticSegmentationClassification
@@ -267,7 +267,7 @@ class ViBERTgridNet(nn.Module):
             roi_channel=self.p_fuse_channel,
             roi_shape=self.roi_shape,
         )
-        self.field_type_classification_head = FieldTypeClassificationSimplified(
+        self.field_type_classification_head = FieldTypeClassification(
             num_classes=self.num_classes,
             fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
             loss_weights=self.loss_weights,

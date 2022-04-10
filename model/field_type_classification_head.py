@@ -142,9 +142,8 @@ class LateFusion(nn.Module):
         return fuse_embeddings
 
 
-class FieldTypeClassificationSimplified(nn.Module):
-    """a simplified version of field type classification,
-    discard the original two-stage classification pipeline
+class FieldTypeClassification(nn.Module):
+    """field type classification
 
     apply classification to all ROIs seperately
 
@@ -284,3 +283,118 @@ class FieldTypeClassificationSimplified(nn.Module):
             segment_classes.int(),
             class_pred,
         )
+
+
+class SimplifiedFieldTypeClassification(nn.Module):
+    """a simplified version of field type classification,
+    discard the original two-stage classification pipeline
+
+    apply classification to all ROIs seperately
+
+    Parameters
+    ----------
+    num_classes : int
+        number of classes
+    fuse_embedding_channel : int
+        number of channels of fuse embeddings
+    loss_weights : torch.Tensor, optional
+        weights used in CrossEntropyLoss, deal with data imbalance, by default None
+    num_hard_positive: int
+        number of hard positive samples for OHEM in `L_2`, by default -1
+    num_hard_negative: int
+        number of hard negative samples for OHEM in `L_2`, by default -1
+
+    """
+
+    def __init__(
+        self,
+        num_classes: int,
+        fuse_embedding_channel: int,
+        loss_weights: Optional[List] = None,
+        num_hard_positive_1: int = -1,
+        num_hard_negative_1: int = -1,
+        num_hard_positive_2: int = -1,
+        num_hard_negative_2: int = -1,
+    ) -> None:
+        super().__init__()
+        self.num_classes = num_classes
+        self.fuse_embedding_channel = fuse_embedding_channel
+        self.pos_neg_classification_net = SingleLayer(
+            in_channels=fuse_embedding_channel, out_channels=2, bias=True
+        )
+        self.category_classification_net = SingleLayer(
+            in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
+        )
+        self.pos_neg_classification_loss = CrossEntropyLossOHEM(
+        num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
+        )
+        if loss_weights is not None:
+            self.field_type_classification_loss = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive_2,
+                num_hard_negative=num_hard_negative_2,
+                weight=loss_weights,
+            )
+        else:
+            self.field_type_classification_loss = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive_2,
+                num_hard_negative=num_hard_negative_2,
+            )
+
+    def forward(
+        self,
+        fuse_embeddings: torch.Tensor,
+        segment_classes: Tuple[torch.Tensor],
+    ) -> torch.Tensor:
+        """a simplified version of field type classification,
+        discard the original two-stage classification pipeline
+
+        apply classification to all ROIs seperately
+
+        Parameters
+        ----------
+        fuse_embeddings : torch.Tensor
+            late fusion results from late_fusion
+        segment_classes: Tuple[torch.Tensor]
+            segment_classes from dataset
+
+        Returns
+        -------
+        field_type_classification_loss : torch.Tensor
+            classification loss
+        pred_class : torch.Tensor
+            prediction class result
+        """
+        device = fuse_embeddings.device
+
+        label_class = torch.cat(segment_classes, dim=0).to(device).long()
+        label_pos_neg = (label_class > 0).long()
+
+        # (bs*seq_len)
+        fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
+        assert fuse_embeddings.shape[0] == label_class.shape[0]
+
+        # (pure_len, 2)
+        pred_pos_neg = self.pos_neg_classification_net(fuse_embeddings)
+        pos_neg_classification_loss_val = self.pos_neg_classification_loss(
+            pred_pos_neg, label_pos_neg
+        )
+        # (pure_len)
+        pred_pos_neg_mask = torch.argmax(pred_pos_neg.detach(), dim=1)
+
+        # (pure_len, field_types)
+        pred_class: torch.Tensor
+        pred_class = self.category_classification_net(fuse_embeddings)
+        classification_loss_val = self.field_type_classification_loss(
+            # pred_class[pred_pos_neg_mask], label_class[pred_pos_neg_mask]
+            pred_class,
+            label_class,
+        )
+        # pred_class[~pred_pos_neg_mask] = 0
+
+        return (
+            pos_neg_classification_loss_val + classification_loss_val,
+            # classification_loss_val,
+            label_class.int(),
+            pred_class,
+        )
+
