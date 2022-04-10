@@ -1,4 +1,5 @@
 import os
+import re
 import argparse
 import yaml
 import tqdm
@@ -16,6 +17,55 @@ from typing import Iterable, Dict
 SROIE_CLASS_LIST = ["others", "company", "date", "address", "total"]
 
 
+def SROIE_result_filter(raw_string: str, class_index: int):
+    if class_index == 1:
+        # company
+        return raw_string
+    elif class_index == 2:
+        # date
+        date_re = re.compile(
+            r"((?i)(?:[12][0-9]|3[01]|0*[1-9])(?P<sep>[- \/.\\])(?P=sep)*(?:1[012]|0*[1-9]|jan(?:uary)?|feb("
+            r"?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov("
+            r"?:ember)?|dec(?:ember)?)(?P=sep)+(?:19|20)\d\d|(?:[12][0-9]|3[01]|0*[1-9])(?P<sep2>[- \/.\\])("
+            r"?P=sep2)*(?:1[012]|0*[1-9]|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul("
+            r"?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?P=sep2)+\d\d|(?:1[012]|0*["
+            r"1-9]|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep("
+            r"?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?P<sep3>[- \/.\\])(?P=sep3)*(?:[12][0-9]|3[01]|0*["
+            r"1-9])(?P=sep3)+(?:19|20)\d\d|(?:1[012]|0*[1-9]|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr("
+            r"?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)("
+            r"?P<sep4>[- \/.\\])(?P=sep4)*(?:[12][0-9]|3[01]|0*[1-9])(?P=sep4)+\d\d|(?:19|20)\d\d(?P<sep5>[- \/.\\])("
+            r"?P=sep5)*(?:1[012]|0*[1-9]|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul("
+            r"?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?P=sep5)+(?:[12][0-9]|3["
+            r"01]|0*[1-9])|\d\d(?P<sep6>[- \/.\\])(?P=sep6)*(?:1[012]|0*[1-9]|jan(?:uary)?|feb(?:ruary)?|mar("
+            r"?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec("
+            r"?:ember)?)(?P=sep6)+(?:[12][0-9]|3[01]|0*[1-9])|(?:[12][0-9]|3[01]|0*[1-9])(?:jan(?:uary)?|feb("
+            r"?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov("
+            r"?:ember)?|dec(?:ember)?)(?:19|20)\d\d|(?:[12][0-9]|3[01]|0*[1-9])(?:jan(?:uary)?|feb(?:ruary)?|mar("
+            r"?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec("
+            r"?:ember)?)\d\d|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug("
+            r"?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[12][0-9]|3[01]|0*[1-9])("
+            r"?:19|20)\d\d|(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug("
+            r"?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[12][0-9]|3[01]|0*[1-9])\d\d|("
+            r"?:19|20)\d\d(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug("
+            r"?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[12][0-9]|3[01]|0*[1-9])|\d\d(?:jan("
+            r"?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct("
+            r"?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[12][0-9]|3[01]|0*[1-9])|(?:[12][0-9]|3[01]|0[1-9])(?:1[012]|0["
+            r"1-9])(?:19|20)\d\d|(?:1[012]|0[1-9])(?:[12][0-9]|3[01]|0[1-9])(?:19|20)\d\d|(?:19|20)\d\d(?:1[012]|0["
+            r"1-9])(?:[12][0-9]|3[01]|0[1-9])|(?:1[012]|0[1-9])(?:[12][0-9]|3[01]|0[1-9])\d\d|(?:[12][0-9]|3[01]|0["
+            r"1-9])(?:1[012]|0[1-9])\d\d|\d\d(?:1[012]|0[1-9])(?:[12][0-9]|3[01]|0[1-9]))"
+        )
+        date_match = date_re.match(raw_string)
+        return date_match
+    elif class_index == 3:
+        # address
+        return raw_string
+    elif class_index == 4:
+        # total
+        total_re = re.compile("^\d+(\.\d+)?$")
+        total_match = total_re.search(raw_string)
+        return total_match
+
+
 @torch.no_grad()
 def evaluation_SROIE(
     model: torch.nn.Module,
@@ -23,7 +73,6 @@ def evaluation_SROIE(
     device: torch.device,
 ):
     num_classes = len(SROIE_CLASS_LIST)
-    pred_key_list = ["" for _ in range(num_classes)]
 
     num_gt = 0.0
     num_det = 0.0
@@ -61,9 +110,13 @@ def evaluation_SROIE(
         )
         pred_label = pred_label.softmax(dim=1).argmax(dim=1).int()
 
+        pred_key_list = ["" for _ in range(num_classes)]
         for seg_index in range(pred_label.shape[0]):
             pred_class = pred_label[seg_index].item()
-            pred_key_list[pred_class] += ocr_text[0][seg_index]
+            if pred_key_list[pred_class].endswith("-"):
+                pred_key_list[pred_class] += ocr_text[0][seg_index]
+            else:
+                pred_key_list[pred_class] += " " + ocr_text[0][seg_index]
 
         recall = 0
         precision = 0
@@ -78,6 +131,7 @@ def evaluation_SROIE(
             if class_index == 0:
                 continue
             curr_pred_str = pred_key_list[class_index]
+            curr_pred_str = SROIE_result_filter(curr_pred_str, class_index)
             curr_class_name = SROIE_CLASS_LIST[class_index]
             curr_gt_str = key_dict[0][curr_class_name]
             if curr_pred_str == curr_gt_str:
