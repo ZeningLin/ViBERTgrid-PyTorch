@@ -115,8 +115,11 @@ def evaluation_SROIE(
             pred_class = pred_label[seg_index].item()
             if pred_key_list[pred_class].endswith("-"):
                 pred_key_list[pred_class] += ocr_text[0][seg_index]
+            elif pred_key_list[pred_class] == "":
+                pred_key_list[pred_class] += ocr_text[0][seg_index]
             else:
                 pred_key_list[pred_class] += " " + ocr_text[0][seg_index]
+            
 
         recall = 0
         precision = 0
