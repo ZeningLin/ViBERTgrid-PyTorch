@@ -92,6 +92,8 @@ def train(args):
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
 
+    classifier_mode = hyp["classifier_mode"]
+
     device = torch.device(device)
 
     print(f"==> loading tokenizer {bert_version}")
@@ -135,6 +137,7 @@ def train(args):
         num_hard_positive_aux=num_hard_positive_aux,
         num_hard_negative_aux=num_hard_negative_aux,
         loss_aux_sample_list=loss_aux_sample_list,
+        classifier_mode=classifier_mode,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)

@@ -17,9 +17,13 @@ from model.grid_roi_align import GridROIAlign
 from model.ResNetFPN_ViBERTgrid import resnet_18_fpn
 from model.field_type_classification_head import (
     FieldTypeClassification,
+    SimplifiedFieldTypeClassification,
     LateFusion,
 )
-from model.semantic_segmentation_head import SemanticSegmentationClassification
+from model.semantic_segmentation_head import (
+    SemanticSegmentationClassifier,
+    SimplifiedSemanticSegmentationClassifier,
+)
 from pipeline.transform import GeneralizedViBERTgridTransform, ImageList
 
 
@@ -88,6 +92,11 @@ class ViBERTgridNet(nn.Module):
         number of hard negative samples for OHEM in `L_{AUX-2}`, by default -1
     loss_control_lambda : float, optional
         hyperparameters that controls the ratio of auxiliary loss and classification loss, by default 1
+    classifier_mode: str, optional
+        determine which kind of classifier to use. "full" refers to the original classifier
+        structure mentioned in the paper, using multiple binary classifiers for each field type.
+        "simp" refers to the simplified version, using a multi-class classifier for all the
+        fields.
 
     """
 
@@ -116,6 +125,7 @@ class ViBERTgridNet(nn.Module):
         num_hard_positive_aux=-1,
         num_hard_negative_aux=-1,
         loss_control_lambda: float = 1,
+        classifier_mode: str = "full"
     ) -> None:
         super().__init__()
 
@@ -250,6 +260,9 @@ class ViBERTgridNet(nn.Module):
                 raise TypeError(
                     f"loss_weights must be None, List or torch.Tensor, {type(loss_weights)} given"
                 )
+        
+        assert classifier_mode in ["full", "simp"], f"invalid classifier mode, must be 'full' or 'simp'"
+        self.classifier_mode = classifier_mode
 
         self.BERTgrid_generator = BERTgridGenerator(
             bert_model=self.bert_model,
@@ -267,24 +280,45 @@ class ViBERTgridNet(nn.Module):
             roi_channel=self.p_fuse_channel,
             roi_shape=self.roi_shape,
         )
-        self.field_type_classification_head = FieldTypeClassification(
-            num_classes=self.num_classes,
-            fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
-            loss_weights=self.loss_weights,
-            num_hard_positive_1=num_hard_positive_main_1,
-            num_hard_negative_1=num_hard_negative_main_1,
-            num_hard_positive_2=num_hard_positive_main_2,
-            num_hard_negative_2=num_hard_negative_main_2,
-        )
 
-        self.semantic_segmentation_head = SemanticSegmentationClassification(
-            p_fuse_channel=self.p_fuse_channel,
-            num_classes=self.num_classes,
-            loss_weights=self.loss_weights,
-            loss_1_sample_list=loss_aux_sample_list,
-            num_hard_positive=num_hard_positive_aux,
-            num_hard_negative=num_hard_negative_aux,
-        )
+        if self.classifier_mode == "full":
+            self.field_type_classification_head = FieldTypeClassification(
+                num_classes=self.num_classes,
+                fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                loss_weights=self.loss_weights,
+                num_hard_positive_1=num_hard_positive_main_1,
+                num_hard_negative_1=num_hard_negative_main_1,
+                num_hard_positive_2=num_hard_positive_main_2,
+                num_hard_negative_2=num_hard_negative_main_2,
+            )
+
+            self.semantic_segmentation_head = SemanticSegmentationClassifier(
+                p_fuse_channel=self.p_fuse_channel,
+                num_classes=self.num_classes,
+                loss_weights=self.loss_weights,
+                loss_1_sample_list=loss_aux_sample_list,
+                num_hard_positive=num_hard_positive_aux,
+                num_hard_negative=num_hard_negative_aux,
+            )
+        elif self.classifier_mode == "simp":
+            self.field_type_classification_head = SimplifiedFieldTypeClassification(
+                num_classes=self.num_classes,
+                fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                loss_weights=self.loss_weights,
+                num_hard_positive_1=num_hard_positive_main_1,
+                num_hard_negative_1=num_hard_negative_main_1,
+                num_hard_positive_2=num_hard_positive_main_2,
+                num_hard_negative_2=num_hard_negative_main_2,
+            )
+
+            self.semantic_segmentation_head = SimplifiedSemanticSegmentationClassifier(
+                p_fuse_channel=self.p_fuse_channel,
+                num_classes=self.num_classes,
+                loss_weights=self.loss_weights,
+                loss_1_sample_list=loss_aux_sample_list,
+                num_hard_positive=num_hard_positive_aux,
+                num_hard_negative=num_hard_negative_aux,
+            )
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -406,4 +440,8 @@ if __name__ == "__main__":
     )
     eval_result = token_F1_criteria({pred_label: gt_label})
 
-    print("debug finished, total_loss = {} result: {}".format(total_loss.item(), eval_result))
+    print(
+        "debug finished, total_loss = {} result: {}".format(
+            total_loss.item(), eval_result
+        )
+    )

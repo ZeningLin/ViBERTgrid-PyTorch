@@ -88,7 +88,7 @@ class SemanticSegmentationBinaryClassifier(nn.Module):
         return x
 
 
-class SemanticSegmentationClassification(nn.Module):
+class SemanticSegmentationClassifier(nn.Module):
     """auxiliary semantic segmentation head
 
     Parameters
