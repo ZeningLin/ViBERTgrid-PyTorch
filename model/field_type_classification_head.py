@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 
+from model.crf import CRF, START_TAG, STOP_TAG
 from pipeline.custom_loss import CrossEntropyLossOHEM, BCELossOHEM
 
-from typing import Optional, Tuple, List, Any
+from typing import Optional, Tuple, List, Any, Dict
 
 
 class AttrProxy(object):
@@ -206,9 +207,13 @@ class FieldTypeClassification(nn.Module):
                         num_hard_negative=num_hard_negative_2,
                     ),
                 )
-        
-        self.category_classification_net = AttrProxy(self, "category_classification_net_")
-        self.field_type_classification_loss = AttrProxy(self, "field_type_classification_loss_")
+
+        self.category_classification_net = AttrProxy(
+            self, "category_classification_net_"
+        )
+        self.field_type_classification_loss = AttrProxy(
+            self, "field_type_classification_loss_"
+        )
 
     def forward(
         self,
@@ -326,7 +331,7 @@ class SimplifiedFieldTypeClassification(nn.Module):
             in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
         )
         self.pos_neg_classification_loss = CrossEntropyLossOHEM(
-        num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
+            num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
         )
         if loss_weights is not None:
             self.field_type_classification_loss = CrossEntropyLossOHEM(
@@ -354,7 +359,7 @@ class SimplifiedFieldTypeClassification(nn.Module):
         ----------
         fuse_embeddings : torch.Tensor
             late fusion results from late_fusion
-        segment_classes: Tuple[torch.Tensor]
+        segment_classes : Tuple[torch.Tensor]
             segment_classes from dataset
 
         Returns
@@ -398,3 +403,89 @@ class SimplifiedFieldTypeClassification(nn.Module):
             pred_class,
         )
 
+
+class CRFFieldTypeClassification(nn.Module):
+    def __init__(
+        self,
+        tag_to_idx: Dict,
+        fuse_embedding_channel: int,
+    ) -> None:
+        """field type classification head with CRF layer
+            apply multiclass classification
+
+        Parameters
+        ----------
+        tag_to_idx : Dict
+            a dictionary that provides mapping from tag-name to index,
+            containing `num_classes` elements
+        fuse_embedding_channel : int
+            number of channels of fuse embeddings
+        """
+        super().__init__()
+        self.num_classes = len(tag_to_idx)
+        self.num_tags = self.num_classes + 2
+
+        assert (
+            max(tag_to_idx.values()) == self.num_classes - 1
+        ), f"invalid tag_to_idx format"
+        self.tag_to_idx = tag_to_idx
+        self.tag_to_idx[START_TAG] = self.num_classes
+        self.tag_to_idx[STOP_TAG] = self.num_classes + 1
+
+        self.fuse_embedding_channel = fuse_embedding_channel
+        self.category_classification_net = SingleLayer(
+            in_channels=fuse_embedding_channel, out_channels=self.num_tags, bias=True
+        )
+
+        self.crf_layer = CRF(self.tag_to_idx)
+
+    def forward(
+        self,
+        fuse_embeddings: torch.Tensor,
+        segment_classes: Tuple[torch.Tensor],
+    ):
+        device = fuse_embeddings.device
+        batch_len_list = [b.shape[0] for b in segment_classes]
+
+        label_class = torch.cat(segment_classes, dim=0).to(device)
+
+        # (bs*seq_len)
+        fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
+        assert fuse_embeddings.shape[0] == label_class.shape[0]
+
+        pred_class: torch.Tensor
+        pred_class = self.category_classification_net(fuse_embeddings)
+
+        if self.training:
+            score = torch.zeros((1,), device=device)
+            start_index = 0
+            for batch_len in batch_len_list:
+                end_index = start_index + batch_len
+                feat = pred_class[start_index: end_index]
+                tag = label_class[start_index: end_index]
+                score += self.crf_layer(feats=feat, tags=tag)
+                start_index = end_index
+            
+            return (
+                score,
+                label_class.int(),
+                pred_class,
+            )
+        else:
+            score = torch.zeros((1,), device=device)
+            tag_seq_list = list()
+            start_index = 0
+            for batch_len in batch_len_list:
+                end_index = start_index + batch_len
+                feat = pred_class[start_index: end_index]
+                score_, tag_seq = self.crf_layer.inference(feats=feat)
+                score += score_
+                tag_seq_list.append(torch.tensor(tag_seq, device=device))
+                start_index = end_index
+
+            tag_seq = torch.cat(tag_seq_list, dim=0)
+            return (
+                score,
+                label_class.int(),
+                tag_seq,
+            )

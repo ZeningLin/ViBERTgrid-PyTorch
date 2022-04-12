@@ -209,7 +209,74 @@ def single_label_parser_ltp(
     csv_label.to_csv(dir_csv_label)
 
 
-def single_label_parser(
+def single_label_parser_char_BIO(
+    dir_img: str,
+    dir_json_label: str,
+    dir_csv_label: str,
+    target_shape: Tuple[int] = None,
+):
+    image = plt.imread(dir_img)
+    image_shape = image.shape
+
+    if target_shape is not None:
+        assert (
+            len(target_shape) == 2
+        ), f"target_shape can only contain 2 elements, {len(target_shape)} given"
+
+    csv_label = pd.DataFrame(
+        columns=["left", "top", "right", "bot", "text", "data_class", "pos_neg"]
+    )
+
+    with open(dir_json_label, "r") as json_f:
+        json_label: Dict = json.load(json_f)
+
+        for segment in json_label.values():
+            num_char = len(segment["string"])
+
+            hor_candidate = segment["box"][::2]
+            ver_candidate = segment["box"][1::2]
+
+            left_coor = int(min(hor_candidate))
+            top_coor = int(min(ver_candidate))
+            right_coor = int(max(hor_candidate))
+            bot_coor = int(max(ver_candidate))
+            width = right_coor - left_coor
+
+            if target_shape is not None:
+                scale_x = target_shape[0] / image_shape[0]
+                scale_y = target_shape[1] / image_shape[1]
+                left_coor *= scale_x
+                right_coor *= scale_x
+                top_coor *= scale_y
+                bot_coor *= scale_y
+
+            char_width = (width + num_char - 1) // num_char
+            curr_left = left_coor
+            for char_index in range(num_char):
+                curr_right = curr_left + char_width
+                char_class = segment["tag"][char_index]
+                char_pos_neg = 2 if (char_class == 0) else 1
+
+                curr_row_dict = {
+                    "left": [curr_left],
+                    "top": [top_coor],
+                    "right": [curr_right],
+                    "bot": [bot_coor],
+                    "text": [segment["string"][char_index]],
+                    "data_class": [char_class],
+                    "pos_neg": [char_pos_neg],
+                }
+                curr_row_dataframe = pd.DataFrame(curr_row_dict)
+                csv_label = pd.concat(
+                    [csv_label, curr_row_dataframe], axis=0, ignore_index=True
+                )
+
+                curr_left = curr_right
+
+    csv_label.to_csv(dir_csv_label)
+
+
+def single_label_parser_char(
     dir_img: str,
     dir_json_label: str,
     dir_csv_label: str,

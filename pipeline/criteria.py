@@ -1,4 +1,6 @@
 import torch
+from seqeval.metrics import precision_score, recall_score, f1_score, classification_report
+
 from typing import Dict
 
 
@@ -12,6 +14,29 @@ def token_classification_criteria(gt_label: torch.Tensor, pred_label: torch.Tens
             num_correct += 1
 
     return num_correct, num_entities
+
+
+@torch.no_grad()
+def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: Dict):
+    idx_to_tag = {v: k for k, v in tag_to_idx.items()}
+
+    pred_list = list()
+    label_list = list()
+    for pred, label in pred_gt_dict.items():
+        pred = pred.int().cpu().tolist()
+        pred = [idx_to_tag[item] for item in pred]
+        label = label.int().cpu().tolist()
+        label = [idx_to_tag[item] for item in label]
+
+        pred_list.append(pred)
+        label_list.append(label)
+
+    p = precision_score(label_list, pred_list)
+    r = recall_score(label_list, pred_list)
+    f = f1_score(label_list, pred_list)
+    report = classification_report(label_list, pred_list)
+
+    return p, r, f, report
 
 
 @torch.no_grad()

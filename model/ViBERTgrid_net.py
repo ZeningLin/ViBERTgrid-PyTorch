@@ -10,7 +10,7 @@ from transformers import (
     RobertaConfig,
 )
 
-from typing import Tuple, List, Any
+from typing import Tuple, List, Any, Dict
 
 from model.BERTgrid_generator import BERTgridGenerator
 from model.grid_roi_align import GridROIAlign
@@ -18,6 +18,7 @@ from model.ResNetFPN_ViBERTgrid import resnet_18_fpn
 from model.field_type_classification_head import (
     FieldTypeClassification,
     SimplifiedFieldTypeClassification,
+    CRFFieldTypeClassification,
     LateFusion,
 )
 from model.semantic_segmentation_head import (
@@ -93,10 +94,12 @@ class ViBERTgridNet(nn.Module):
     loss_control_lambda : float, optional
         hyperparameters that controls the ratio of auxiliary loss and classification loss, by default 1
     classifier_mode: str, optional
-        determine which kind of classifier to use. "full" refers to the original classifier
-        structure mentioned in the paper, using multiple binary classifiers for each field type.
+        determine which kind of classifier to use.
+        "full" refers to the original classifier structure mentioned in the paper,
+        using multiple binary classifiers for each field type.
         "simp" refers to the simplified version, using a multi-class classifier for all the
         fields.
+        "crf" refers to a field-type classification head with CRF layer.
 
     """
 
@@ -125,7 +128,8 @@ class ViBERTgridNet(nn.Module):
         num_hard_positive_aux=-1,
         num_hard_negative_aux=-1,
         loss_control_lambda: float = 1,
-        classifier_mode: str = "full"
+        classifier_mode: str = "full",
+        tag_to_idx: Dict = None,
     ) -> None:
         super().__init__()
 
@@ -260,8 +264,12 @@ class ViBERTgridNet(nn.Module):
                 raise TypeError(
                     f"loss_weights must be None, List or torch.Tensor, {type(loss_weights)} given"
                 )
-        
-        assert classifier_mode in ["full", "simp"], f"invalid classifier mode, must be 'full' or 'simp'"
+
+        assert classifier_mode in [
+            "full",
+            "simp",
+            "crf",
+        ], f"invalid classifier mode, must be 'full', 'simp' or 'crf'"
         self.classifier_mode = classifier_mode
 
         self.BERTgrid_generator = BERTgridGenerator(
@@ -312,6 +320,21 @@ class ViBERTgridNet(nn.Module):
             )
 
             self.semantic_segmentation_head = SimplifiedSemanticSegmentationClassifier(
+                p_fuse_channel=self.p_fuse_channel,
+                num_classes=self.num_classes,
+                loss_weights=self.loss_weights,
+                loss_1_sample_list=loss_aux_sample_list,
+                num_hard_positive=num_hard_positive_aux,
+                num_hard_negative=num_hard_negative_aux,
+            )
+        elif self.classifier_mode == "crf":
+            assert tag_to_idx is not None, f"tag_to_idx cannot be None in crf mode"
+            self.field_type_classification_head = CRFFieldTypeClassification(
+                tag_to_idx=tag_to_idx,
+                fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+            )
+
+            self.semantic_segmentation_head = SemanticSegmentationClassifier(
                 p_fuse_channel=self.p_fuse_channel,
                 num_classes=self.num_classes,
                 loss_weights=self.loss_weights,
@@ -381,7 +404,19 @@ if __name__ == "__main__":
 
     from transformers import BertTokenizer, BertModel
     from data.SROIE_dataset import load_train_dataset
-    from pipeline.criteria import token_F1_criteria
+    from pipeline.criteria import token_F1_criteria, BIO_F1_criteria
+
+    TAG_TO_IDX = {
+        "O": 0,
+        "B-company": 1,
+        "I-company": 2,
+        "B-date": 3,
+        "I-date": 4,
+        "B-address": 5,
+        "I-address": 6,
+        "B-total": 7,
+        "I-total": 8,
+    }
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=str, help="dir to data root")
@@ -415,6 +450,8 @@ if __name__ == "__main__":
         num_hard_positive_aux=2,
         num_hard_negative_aux=2,
         bert_model=bert_version,
+        classifier_mode="crf",
+        tag_to_idx=TAG_TO_IDX,
     )
     model = model.to(device)
 
@@ -438,10 +475,9 @@ if __name__ == "__main__":
     total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
         image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
     )
-    eval_result = token_F1_criteria({pred_label: gt_label})
 
-    print(
-        "debug finished, total_loss = {} result: {}".format(
-            total_loss.item(), eval_result
-        )
-    )
+    p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
+    # eval_result = token_F1_criteria({pred_label: gt_label})
+    print(report)
+
+    print("debug finished, total_loss = {} result: {}".format(total_loss.item(), [p, r, f]))

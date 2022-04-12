@@ -24,6 +24,18 @@ from pipeline.distributed_utils import (
     save_on_master,
 )
 
+TAG_TO_IDX = {
+    "O": 0,
+    "B-company": 1,
+    "I-company": 2,
+    "B-date": 3,
+    "I-date": 4,
+    "B-address": 5,
+    "I-address": 6,
+    "B-total": 7,
+    "I-total": 8,
+}
+
 
 def train(args):
     init_distributed_mode(args)
@@ -147,7 +159,8 @@ def train(args):
         num_hard_positive_aux=num_hard_positive_aux,
         num_hard_negative_aux=num_hard_negative_aux,
         loss_aux_sample_list=loss_aux_sample_list,
-        classifier_mode=classifier_mode
+        classifier_mode=classifier_mode,
+        tag_to_idx=TAG_TO_IDX,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -320,6 +333,8 @@ def train(args):
             device=device,
             epoch=epoch,
             logger=logger,
+            classifier_mode=classifier_mode,
+            tag_to_idx=TAG_TO_IDX
         )
 
         if F1 > top_F1:

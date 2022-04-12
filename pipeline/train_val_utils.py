@@ -15,6 +15,7 @@ from pipeline.distributed_utils import reduce_loss, get_world_size
 from pipeline.criteria import (
     token_classification_criteria,
     token_F1_criteria,
+    BIO_F1_criteria,
 )
 from utils.ViBERTgrid_visualize import inference_visualize, draw_box
 
@@ -353,6 +354,8 @@ def validate(
     logger: TensorboardLogger,
     distributed: bool = True,
     iter_msg: bool = True,
+    classifier_mode: str = "full",
+    tag_to_idx: Dict = None,
 ):
     num_iter = len(validate_loader)
     start_time = time.time()
@@ -430,37 +433,46 @@ def validate(
     if device != torch.device("cpu"):
         torch.cuda.synchronize(device)
 
-    result_dict: Dict
-    result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
-    num_classes = result_dict["num_classes"]
-    marco_precision = 0.0
-    marco_recall = 0.0
-    marco_F1 = 0.0
-    per_class_F1 = list()
-    for class_index in range(num_classes):
-        curr_dict: Dict
-        curr_dict = result_dict[class_index]
-        marco_precision += curr_dict["precision"]
-        marco_recall += curr_dict["recall"]
-        marco_F1 += curr_dict["F1"]
-        per_class_F1.append(curr_dict["F1"])
-
-    marco_precision /= num_classes
-    marco_recall /= num_classes
-    marco_F1 /= num_classes
-
-    time_used = time.time() - start_time
-    print(
-        log_message.format(
-            epoch=(epoch + 1),
-            val_loss=validate_loss_value,
-            precision=marco_precision,
-            recall=marco_recall,
-            F1=marco_F1,
-            time_used=time_used,
-            per_class_F1=per_class_F1,
+    if classifier_mode == "crf":
+        assert tag_to_idx is not None
+        marco_precision, marco_recall, marco_F1, report = BIO_F1_criteria(
+            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
         )
-    )
+        marco_precision = -1
+        marco_recall = -1
+        print(report)
+    else:
+        result_dict: Dict
+        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
+        num_classes = result_dict["num_classes"]
+        marco_precision = 0.0
+        marco_recall = 0.0
+        marco_F1 = 0.0
+        per_class_F1 = list()
+        for class_index in range(num_classes):
+            curr_dict: Dict
+            curr_dict = result_dict[class_index]
+            marco_precision += curr_dict["precision"]
+            marco_recall += curr_dict["recall"]
+            marco_F1 += curr_dict["F1"]
+            per_class_F1.append(curr_dict["F1"])
+
+        marco_precision /= num_classes
+        marco_recall /= num_classes
+        marco_F1 /= num_classes
+
+        time_used = time.time() - start_time
+        print(
+            log_message.format(
+                epoch=(epoch + 1),
+                val_loss=validate_loss_value,
+                precision=marco_precision,
+                recall=marco_recall,
+                F1=marco_F1,
+                time_used=time_used,
+                per_class_F1=per_class_F1,
+            )
+        )
 
     if logger is not None:
         logger.update(head="loss", validate_loss=validate_loss_value, step=epoch + 1)
@@ -485,7 +497,7 @@ def inference_once(
         ocr_corpus,
         mask,
         ocr_text,
-        _
+        _,
     ) = batch
 
     assert (
