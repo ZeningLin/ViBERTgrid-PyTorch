@@ -111,6 +111,7 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
         ignore_index: int = -100,
         reduction: str = "mean",
         label_smoothing: float = 0.0,
+        random: bool = False,
     ) -> None:
         super().__init__(
             weight=weight,
@@ -121,6 +122,7 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
         )
         self.num_hard_positive = num_hard_positive
         self.num_hard_negative = num_hard_negative
+        self.random = random
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.num_hard_positive == -1 and self.num_hard_negative == -1:
@@ -145,6 +147,23 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
         mask = target == 0
         positive_loss = ce_loss[~mask]
         negative_loss = ce_loss[mask]
+
+        if self.random:
+            num_random_pos = 2 * self.num_hard_positive
+            if num_random_pos < positive_loss.shape[0]:
+                keep_index = random.sample(
+                    range(int(positive_loss.shape[0])), num_random_pos
+                )
+                keep_index = torch.tensor(keep_index, device=ce_loss.device)
+                positive_loss = positive_loss[keep_index]
+
+            num_random_neg = 2 * self.num_hard_negative
+            if num_random_neg < negative_loss.shape[0]:
+                keep_index = random.sample(
+                    range(int(negative_loss.shape[0])), num_random_neg
+                )
+                keep_index = torch.tensor(keep_index, device=ce_loss.device)
+                negative_loss = negative_loss[keep_index]
 
         sorted_positive_loss, sorted_positive_index = torch.sort(
             positive_loss, descending=True
@@ -180,6 +199,7 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
             )
 
         return keep_ce_loss
+
 
 class BCELossRandomSample(nn.BCELoss):
     def __init__(
@@ -276,6 +296,7 @@ class BCELossOHEM(nn.BCELoss):
         weight: Optional[torch.Tensor] = None,
         size_average=None,
         reduction: str = "mean",
+        random: bool = False,
     ) -> None:
         super().__init__(
             weight=weight,
@@ -284,6 +305,7 @@ class BCELossOHEM(nn.BCELoss):
         )
         self.num_hard_positive = num_hard_positive
         self.num_hard_negative = num_hard_negative
+        self.random = random
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.num_hard_positive == -1 and self.num_hard_negative == -1:
@@ -304,6 +326,23 @@ class BCELossOHEM(nn.BCELoss):
         mask = target == 0
         positive_loss = ce_loss[~mask]
         negative_loss = ce_loss[mask]
+
+        if self.random:
+            num_random_pos = 2 * self.num_hard_positive
+            if num_random_pos < positive_loss.shape[0]:
+                keep_index = random.sample(
+                    range(int(positive_loss.shape[0])), num_random_pos
+                )
+                keep_index = torch.tensor(keep_index, device=ce_loss.device)
+                positive_loss = positive_loss[keep_index]
+
+            num_random_neg = 2 * self.num_hard_negative
+            if num_random_neg < negative_loss.shape[0]:
+                keep_index = random.sample(
+                    range(int(negative_loss.shape[0])), num_random_neg
+                )
+                keep_index = torch.tensor(keep_index, device=ce_loss.device)
+                negative_loss = negative_loss[keep_index]
 
         sorted_positive_loss, sorted_positive_index = torch.sort(
             positive_loss, descending=True

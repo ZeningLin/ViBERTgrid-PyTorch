@@ -120,6 +120,7 @@ def train(args):
     loss_aux_sample_list = hyp["loss_aux_sample_list"]
     num_hard_positive_aux = hyp["num_hard_positive_aux"]
     num_hard_negative_aux = hyp["num_hard_negative_aux"]
+    ohem_random = hyp["ohem_random"]
 
     classifier_mode = hyp["classifier_mode"]
     eval_mode = hyp["eval_mode"]
@@ -176,6 +177,7 @@ def train(args):
         loss_aux_sample_list=loss_aux_sample_list,
         classifier_mode=classifier_mode,
         tag_to_idx=map_dict,
+        ohem_random=ohem_random,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)

@@ -130,6 +130,7 @@ class ViBERTgridNet(nn.Module):
         loss_control_lambda: float = 1,
         classifier_mode: str = "full",
         tag_to_idx: Dict = None,
+        ohem_random: bool = False,
     ) -> None:
         super().__init__()
 
@@ -302,6 +303,7 @@ class ViBERTgridNet(nn.Module):
                 num_hard_negative_1=num_hard_negative_main_1,
                 num_hard_positive_2=num_hard_positive_main_2,
                 num_hard_negative_2=num_hard_negative_main_2,
+                random=ohem_random,
             )
 
             self.semantic_segmentation_head = SemanticSegmentationClassifier(
@@ -321,6 +323,7 @@ class ViBERTgridNet(nn.Module):
                 num_hard_negative_1=num_hard_negative_main_1,
                 num_hard_positive_2=num_hard_positive_main_2,
                 num_hard_negative_2=num_hard_negative_main_2,
+                random=ohem_random,
             )
 
             self.semantic_segmentation_head = SimplifiedSemanticSegmentationClassifier(
@@ -456,6 +459,7 @@ if __name__ == "__main__":
         bert_model=bert_version,
         classifier_mode="full",
         tag_to_idx=TAG_TO_IDX,
+        ohem_random=True,
     )
     model = model.to(device)
 
@@ -484,4 +488,8 @@ if __name__ == "__main__":
     # eval_result = token_F1_criteria({pred_label: gt_label})
     print(report)
 
-    print("debug finished, total_loss = {} result: {}".format(total_loss.item(), [p, r, f]))
+    print(
+        "debug finished, total_loss = {} result: {}".format(
+            total_loss.item(), [p, r, f]
+        )
+    )

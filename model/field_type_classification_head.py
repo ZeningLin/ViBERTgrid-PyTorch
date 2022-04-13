@@ -172,6 +172,7 @@ class FieldTypeClassification(nn.Module):
         num_hard_negative_1: int = -1,
         num_hard_positive_2: int = -1,
         num_hard_negative_2: int = -1,
+        random: bool = False,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
@@ -182,7 +183,9 @@ class FieldTypeClassification(nn.Module):
         )
 
         self.pos_neg_classification_loss = BCELossOHEM(
-            num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
+            num_hard_positive=num_hard_positive_1,
+            num_hard_negative=num_hard_negative_1,
+            random=random,
         )
 
         for idx in range(self.num_classes - 1):
@@ -197,6 +200,7 @@ class FieldTypeClassification(nn.Module):
                         num_hard_positive=num_hard_positive_2,
                         num_hard_negative=num_hard_negative_2,
                         weight=loss_weights,
+                        random=random,
                     ),
                 )
             else:
@@ -205,6 +209,7 @@ class FieldTypeClassification(nn.Module):
                     BCELossOHEM(
                         num_hard_positive=num_hard_positive_2,
                         num_hard_negative=num_hard_negative_2,
+                        random=random,
                     ),
                 )
 
@@ -261,7 +266,9 @@ class FieldTypeClassification(nn.Module):
         pos_fuse_embeddings = fuse_embeddings[pred_pos_neg_mask]
 
         class_pred = torch.zeros(
-            (fuse_embeddings.shape[0], self.num_classes), dtype=torch.float, device=device
+            (fuse_embeddings.shape[0], self.num_classes),
+            dtype=pred_pos_neg.dtype,
+            device=device,
         )
         class_pred[:, 0] = pred_pos_neg.detach().sigmoid()
         classification_loss_val = torch.zeros((1,), device=device)
@@ -278,7 +285,9 @@ class FieldTypeClassification(nn.Module):
                     class_index
                 ](curr_class_pred, curr_class_label.float())
 
-                class_pred[:, class_index + 1][pred_pos_neg_mask] = curr_class_pred.detach().sigmoid()
+                class_pred[:, class_index + 1][
+                    pred_pos_neg_mask
+                ] = curr_class_pred.detach().sigmoid()
 
         return (
             pos_neg_classification_loss_val + classification_loss_val,
@@ -318,6 +327,7 @@ class SimplifiedFieldTypeClassification(nn.Module):
         num_hard_negative_1: int = -1,
         num_hard_positive_2: int = -1,
         num_hard_negative_2: int = -1,
+        random: bool = False,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
@@ -329,18 +339,22 @@ class SimplifiedFieldTypeClassification(nn.Module):
             in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
         )
         self.pos_neg_classification_loss = CrossEntropyLossOHEM(
-            num_hard_positive=num_hard_positive_1, num_hard_negative=num_hard_negative_1
+            num_hard_positive=num_hard_positive_1,
+            num_hard_negative=num_hard_negative_1,
+            random=random,
         )
         if loss_weights is not None:
             self.field_type_classification_loss = CrossEntropyLossOHEM(
                 num_hard_positive=num_hard_positive_2,
                 num_hard_negative=num_hard_negative_2,
                 weight=loss_weights,
+                random=random,
             )
         else:
             self.field_type_classification_loss = CrossEntropyLossOHEM(
                 num_hard_positive=num_hard_positive_2,
                 num_hard_negative=num_hard_negative_2,
+                random=random,
             )
 
     def forward(
@@ -381,8 +395,6 @@ class SimplifiedFieldTypeClassification(nn.Module):
         pos_neg_classification_loss_val = self.pos_neg_classification_loss(
             pred_pos_neg, label_pos_neg
         )
-        # (pure_len)
-        pred_pos_neg_mask = torch.argmax(pred_pos_neg.detach(), dim=1)
 
         # (pure_len, field_types)
         pred_class: torch.Tensor
@@ -459,11 +471,11 @@ class CRFFieldTypeClassification(nn.Module):
             start_index = 0
             for batch_len in batch_len_list:
                 end_index = start_index + batch_len
-                feat = pred_class[start_index: end_index]
-                tag = label_class[start_index: end_index]
+                feat = pred_class[start_index:end_index]
+                tag = label_class[start_index:end_index]
                 score += self.crf_layer(feats=feat, tags=tag)
                 start_index = end_index
-            
+
             return (
                 score,
                 label_class.int(),
@@ -475,7 +487,7 @@ class CRFFieldTypeClassification(nn.Module):
             start_index = 0
             for batch_len in batch_len_list:
                 end_index = start_index + batch_len
-                feat = pred_class[start_index: end_index]
+                feat = pred_class[start_index:end_index]
                 score_, tag_seq = self.crf_layer.inference(feats=feat)
                 score += score_
                 tag_seq_list.append(torch.tensor(tag_seq, device=device))
