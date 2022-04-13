@@ -122,7 +122,10 @@ def train(args):
     num_hard_negative_aux = hyp["num_hard_negative_aux"]
 
     classifier_mode = hyp["classifier_mode"]
-    if classifier_mode == "crf":
+    eval_mode = hyp["eval_mode"]
+    tag_mode = hyp["tag_mode"]
+
+    if tag_mode == "BIO":
         map_dict = TAG_TO_IDX_BIO
     else:
         map_dict = TAG_TO_IDX
@@ -310,7 +313,7 @@ def train(args):
         device=device,
         epoch=0,
         logger=logger,
-        eval_mode="seqeval",
+        eval_mode=eval_mode,
         tag_to_idx=map_dict,
     )
 
@@ -347,7 +350,7 @@ def train(args):
             device=device,
             epoch=epoch,
             logger=logger,
-            eval_mode="seqeval",
+            eval_mode=eval_mode,
             tag_to_idx=map_dict,
         )
 

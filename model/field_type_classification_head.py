@@ -261,9 +261,9 @@ class FieldTypeClassification(nn.Module):
         pos_fuse_embeddings = fuse_embeddings[pred_pos_neg_mask]
 
         class_pred = torch.zeros(
-            (fuse_embeddings.shape[0], self.num_classes), dtype=torch.int, device=device
+            (fuse_embeddings.shape[0], self.num_classes), dtype=torch.float, device=device
         )
-        class_pred[:, 0][~pred_pos_neg_mask] = 1
+        class_pred[:, 0] = pred_pos_neg.detach().sigmoid()
         classification_loss_val = torch.zeros((1,), device=device)
 
         if pos_fuse_embeddings.shape[0] != 0:
@@ -278,9 +278,7 @@ class FieldTypeClassification(nn.Module):
                     class_index
                 ](curr_class_pred, curr_class_label.float())
 
-                class_pred[:, class_index + 1][pred_pos_neg_mask] = curr_class_pred.ge(
-                    0.5
-                ).int()
+                class_pred[:, class_index + 1][pred_pos_neg_mask] = curr_class_pred.detach().sigmoid()
 
         return (
             pos_neg_classification_loss_val + classification_loss_val,
@@ -400,7 +398,7 @@ class SimplifiedFieldTypeClassification(nn.Module):
             pos_neg_classification_loss_val + classification_loss_val,
             # classification_loss_val,
             label_class.int(),
-            pred_class,
+            pred_class.detach().softmax(dim=1),
         )
 
 

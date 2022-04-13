@@ -134,6 +134,10 @@ class ViBERTgridNet(nn.Module):
         super().__init__()
 
         self.num_classes = num_classes
+        if tag_to_idx is not None:
+            self.num_tokens = len(tag_to_idx)
+        else:
+            self.num_tokens = num_classes
 
         # preprocessing stuff
         assert isinstance(
@@ -291,7 +295,7 @@ class ViBERTgridNet(nn.Module):
 
         if self.classifier_mode == "full":
             self.field_type_classification_head = FieldTypeClassification(
-                num_classes=self.num_classes,
+                num_classes=self.num_tokens,
                 fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
                 loss_weights=self.loss_weights,
                 num_hard_positive_1=num_hard_positive_main_1,
@@ -310,7 +314,7 @@ class ViBERTgridNet(nn.Module):
             )
         elif self.classifier_mode == "simp":
             self.field_type_classification_head = SimplifiedFieldTypeClassification(
-                num_classes=self.num_classes,
+                num_classes=self.num_tokens,
                 fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
                 loss_weights=self.loss_weights,
                 num_hard_positive_1=num_hard_positive_main_1,
@@ -450,7 +454,7 @@ if __name__ == "__main__":
         num_hard_positive_aux=2,
         num_hard_negative_aux=2,
         bert_model=bert_version,
-        classifier_mode="crf",
+        classifier_mode="full",
         tag_to_idx=TAG_TO_IDX,
     )
     model = model.to(device)
