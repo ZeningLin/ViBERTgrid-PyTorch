@@ -45,8 +45,10 @@ class CRF(nn.Module):
 
 
     def _forward_alg(self, feats):
+        device = self.transitions.device
+
         # Do the forward algorithm to compute the partition function
-        init_alphas = torch.full((1, self.tagset_size), -10000.0)
+        init_alphas = torch.full((1, self.tagset_size), -10000.0, device=device)
         # START_TAG has all of the score.
         init_alphas[0][self.tag_to_ix[START_TAG]] = 0.0
 
@@ -75,10 +77,11 @@ class CRF(nn.Module):
         return alpha
 
     def _score_sentence(self, feats, tags):
+        device = self.transitions.device
         # Gives the score of a provided tag sequence
-        score = torch.zeros(1)
+        score = torch.zeros(1, device=device)
         tags = torch.cat(
-            [torch.tensor([self.tag_to_ix[START_TAG]], dtype=torch.long), tags]
+            [torch.tensor([self.tag_to_ix[START_TAG]], dtype=torch.long, device=device), tags]
         )
         for i, feat in enumerate(feats):
             score = score + self.transitions[tags[i + 1], tags[i]] + feat[tags[i + 1]]
@@ -91,7 +94,7 @@ class CRF(nn.Module):
         backpointers = []
 
         # Initialize the viterbi variables in log space
-        init_vvars = torch.full((1, self.tagset_size), -10000.0)
+        init_vvars = torch.full((1, self.tagset_size), -10000.0, device=self.transitions.device)
         init_vvars[0][self.tag_to_ix[START_TAG]] = 0
 
         # forward_var at step i holds the viterbi variables for step i-1
@@ -136,9 +139,10 @@ class CRF(nn.Module):
         return path_score, best_path
 
     def forward(self, feats, tags):
+        num_feats = feats.shape[0]
         forward_score = self._forward_alg(feats)
         gold_score = self._score_sentence(feats, tags)
-        return forward_score - gold_score
+        return (forward_score - gold_score) / num_feats
 
     def inference(self, feats):  # dont confuse this with _forward_alg above.
         # Find the best path, given the features.
