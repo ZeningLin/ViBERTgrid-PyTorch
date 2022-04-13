@@ -385,7 +385,7 @@ class ViBERTgridNet(nn.Module):
 
         # Auxiliary Semantic Segmentation Head
         loss_aux, pred_mask, pred_ss = self.semantic_segmentation_head(
-            p_fuse_features, seg_indices, segment_classes, coors
+            p_fuse_features, segment_classes, coors
         )
 
         # Word-level Field Type Classification Head

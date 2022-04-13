@@ -151,7 +151,6 @@ class SemanticSegmentationClassifier(nn.Module):
     def forward(
         self,
         fuse_feature: torch.Tensor,
-        seg_indices: Tuple[torch.Tensor],
         seg_classes: Tuple[torch.Tensor],
         coors: Tuple[torch.Tensor],
     ) -> torch.Tensor:
@@ -189,14 +188,7 @@ class SemanticSegmentationClassifier(nn.Module):
             (batch_size, feat_shape[0], feat_shape[1]), dtype=torch.long, device=device
         )
         for batch_index in range(batch_size):
-            prev_segment = -1
             for token_index in range(seg_classes[batch_index].shape[0]):
-                curr_segment = seg_indices[batch_index][token_index].item()
-                if curr_segment == prev_segment:
-                    prev_segment = curr_segment
-                    continue
-                prev_segment = curr_segment
-
                 curr_class = seg_classes[batch_index][token_index]
                 curr_coors = coors[batch_index][token_index]
                 pos_neg_labels[
@@ -287,7 +279,6 @@ class SimplifiedSemanticSegmentationClassifier(nn.Module):
     def forward(
         self,
         fuse_feature: torch.Tensor,
-        seg_indices: Tuple[torch.Tensor],
         seg_classes: Tuple[torch.Tensor],
         coors: Tuple[torch.Tensor],
     ) -> torch.Tensor:
@@ -325,14 +316,7 @@ class SimplifiedSemanticSegmentationClassifier(nn.Module):
             (batch_size, feat_shape[0], feat_shape[1]), dtype=torch.long, device=device
         )
         for batch_index in range(batch_size):
-            prev_segment = -1
             for token_index in range(seg_classes[batch_index].shape[0]):
-                curr_segment = seg_indices[batch_index][token_index].item()
-                if curr_segment == prev_segment:
-                    prev_segment = curr_segment
-                    continue
-                prev_segment = curr_segment
-
                 curr_class = seg_classes[batch_index][token_index]
                 curr_coors = coors[batch_index][token_index]
                 pos_neg_labels[
