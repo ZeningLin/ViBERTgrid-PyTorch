@@ -108,7 +108,7 @@ class SROIEDataset(Dataset):
         ocr_text = []
         seg_classes = []
         for index, row in ocr_csv_file.iterrows():
-            ocr_text.append(row["text"])
+            ocr_text.append(str(row["text"]))
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
             seg_classes.append(row["data_class"])
 
@@ -119,7 +119,7 @@ class SROIEDataset(Dataset):
             if text == "":
                 continue
             ocr_text_filter.append(text)
-            curr_tokens = self.tokenizer.tokenize(text)
+            curr_tokens = self.tokenizer.tokenize(text.lower())
             for i in range(len(curr_tokens)):
                 ocr_tokens.append(curr_tokens[i])
                 seg_indices.append(seg_index)
