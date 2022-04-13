@@ -354,7 +354,7 @@ def validate(
     logger: TensorboardLogger,
     distributed: bool = True,
     iter_msg: bool = True,
-    classifier_mode: str = "full",
+    eval_mode: str = None,
     tag_to_idx: Dict = None,
 ):
     num_iter = len(validate_loader)
@@ -433,13 +433,11 @@ def validate(
     if device != torch.device("cpu"):
         torch.cuda.synchronize(device)
 
-    if classifier_mode == "crf":
+    if eval_mode == "seqeval":
         assert tag_to_idx is not None
         marco_precision, marco_recall, marco_F1, report = BIO_F1_criteria(
             pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
         )
-        marco_precision = -1
-        marco_recall = -1
         print(report)
     else:
         result_dict: Dict

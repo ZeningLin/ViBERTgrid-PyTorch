@@ -27,6 +27,14 @@ from pipeline.distributed_utils import (
 TAG_TO_IDX = {
     "O": 0,
     "B-company": 1,
+    "B-date": 2,
+    "B-address": 3,
+    "B-total": 4,
+}
+
+TAG_TO_IDX_BIO = {
+    "O": 0,
+    "B-company": 1,
     "I-company": 2,
     "B-date": 3,
     "I-date": 4,
@@ -114,6 +122,10 @@ def train(args):
     num_hard_negative_aux = hyp["num_hard_negative_aux"]
 
     classifier_mode = hyp["classifier_mode"]
+    if classifier_mode == "crf":
+        map_dict = TAG_TO_IDX_BIO
+    else:
+        map_dict = TAG_TO_IDX
 
     device = torch.device(device)
 
@@ -160,7 +172,7 @@ def train(args):
         num_hard_negative_aux=num_hard_negative_aux,
         loss_aux_sample_list=loss_aux_sample_list,
         classifier_mode=classifier_mode,
-        tag_to_idx=TAG_TO_IDX,
+        tag_to_idx=map_dict,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -298,6 +310,8 @@ def train(args):
         device=device,
         epoch=0,
         logger=logger,
+        eval_mode="seqeval",
+        tag_to_idx=map_dict,
     )
 
     top_F1_tresh = 0.92
@@ -333,8 +347,8 @@ def train(args):
             device=device,
             epoch=epoch,
             logger=logger,
-            classifier_mode=classifier_mode,
-            tag_to_idx=TAG_TO_IDX
+            eval_mode="seqeval",
+            tag_to_idx=map_dict,
         )
 
         if F1 > top_F1:
