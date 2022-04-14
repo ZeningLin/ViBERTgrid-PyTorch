@@ -334,7 +334,7 @@ def load_test_data(
         batch_size=1,
         num_workers=num_workers,
         collate_fn=SROIE_test_dataset._ViBERTgrid_coll_func,
-        shuffle=True,
+        shuffle=False,
     )
 
     return test_loader

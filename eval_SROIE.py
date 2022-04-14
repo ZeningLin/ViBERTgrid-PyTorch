@@ -108,18 +108,60 @@ def evaluation_SROIE(
         _, _, _, _, pred_label = model(
             image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
-        pred_label = pred_label.softmax(dim=1).argmax(dim=1).int()
 
-        pred_key_list = ["" for _ in range(num_classes)]
+        tresh = 0.6
+        pred_all_list = [list() for _ in range(num_classes - 1)]
+        curr_class_str = ""
+        curr_class_score = 0.0
+        curr_class_seg_len = 00
+        prev_class = -1
         for seg_index in range(pred_label.shape[0]):
-            pred_class = pred_label[seg_index].item()
-            if pred_key_list[pred_class].endswith("-"):
-                pred_key_list[pred_class] += ocr_text[0][seg_index]
-            elif pred_key_list[pred_class] == "":
-                pred_key_list[pred_class] += ocr_text[0][seg_index]
+            curr_pred_logits = pred_label[seg_index].softmax()
+            curr_pred_class: torch.Tensor = curr_pred_logits.argmax(dim=0)
+            if curr_pred_class == 0:
+                continue
+            curr_pred_score = curr_pred_logits[curr_pred_class]
+            if curr_pred_score < tresh:
+                continue
+
+            if curr_pred_class == prev_class:
+                if curr_class_str.endswith("-"):
+                    curr_class_str += ocr_text[0][seg_index]
+                else:
+                    curr_class_str += " " + ocr_text[0][seg_index]
+                curr_class_score += curr_pred_score
+                curr_class_seg_len += 1
             else:
-                pred_key_list[pred_class] += " " + ocr_text[0][seg_index]
-            
+                if prev_class > 0:
+                    pred_all_list[prev_class - 1].append(
+                        (curr_class_str, (curr_class_score / curr_class_seg_len))
+                    )
+
+                curr_class_str = ocr_text[0][seg_index]
+                curr_class_score = curr_pred_score
+
+        pred_key_list = list()
+        for class_all_result in pred_all_list:
+            max_score = 0
+            max_index = 0
+            for curr_index, candidates in enumerate(class_all_result):
+                curr_score = candidates[1]
+                if curr_score > max_score:
+                    max_score = curr_score
+                    max_index = curr_index
+
+            pred_key_list.append(class_all_result[max_index][0])
+
+        # pred_label = pred_label.softmax(dim=1).argmax(dim=1).int()
+        # pred_key_list = ["" for _ in range(num_classes)]
+        # for seg_index in range(pred_label.shape[0]):
+        #     pred_class = pred_label[seg_index].item()
+        #     if pred_key_list[pred_class].endswith("-"):
+        #         pred_key_list[pred_class] += ocr_text[0][seg_index]
+        #     elif pred_key_list[pred_class] == "":
+        #         pred_key_list[pred_class] += ocr_text[0][seg_index]
+        #     else:
+        #         pred_key_list[pred_class] += " " + ocr_text[0][seg_index]
 
         recall = 0
         precision = 0
@@ -219,6 +261,8 @@ def main(args):
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
 
+    classifier_mode = hyp["classifier_mode"]
+
     device = torch.device(device)
 
     print(f"==> loading tokenizer {bert_version}")
@@ -254,6 +298,8 @@ def main(args):
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
+        classifier_mode=classifier_mode,
+        ohem_random=True,
     )
     model = model.to(device)
     print(f"==> model created")
