@@ -178,6 +178,7 @@ def evaluation_SROIE(
         curr_log = " ".join(
             ["pred_key: [{pred_key}]", "gt_key: [{gt_key}]", "status: {status}"]
         )
+        curr_num_det = 0.0
         for class_index in range(num_classes):
             if class_index == 0:
                 continue
@@ -185,6 +186,8 @@ def evaluation_SROIE(
             curr_pred_str = SROIE_result_filter(curr_pred_str, class_index)
             curr_class_name = SROIE_CLASS_LIST[class_index]
             curr_gt_str = key_dict[0][curr_class_name]
+            if curr_pred_str != "" or curr_pred_str != None:
+                curr_num_det += 1
             if curr_pred_str == curr_gt_str:
                 recall_accum += 1
                 precision_accum += 1
@@ -197,7 +200,7 @@ def evaluation_SROIE(
                 )
 
         precision = (
-            float(0) if (num_classes - 1) == 0 else float(precision_accum) / (num_classes - 1)
+            float(0) if (num_classes - 1) == 0 else float(precision_accum) / (curr_num_det)
         )
         recall = float(1) if (num_classes - 1) == 0 else float(recall_accum) / (num_classes - 1)
         hmean = (
@@ -209,7 +212,7 @@ def evaluation_SROIE(
         method_recall_sum += recall_accum
         method_precision_sum += precision_accum
         num_gt += (num_classes - 1)
-        num_det += (num_classes - 1)
+        num_det += curr_num_det
 
         per_sample_metrics[filename] = {
             "precision": precision,
