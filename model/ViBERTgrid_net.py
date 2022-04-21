@@ -14,7 +14,7 @@ from typing import Tuple, List, Any, Dict
 
 from model.BERTgrid_generator import BERTgridGenerator
 from model.grid_roi_align import GridROIAlign
-from model.ResNetFPN_ViBERTgrid import resnet_18_fpn
+from model.ResNetFPN_ViBERTgrid import resnet_18_fpn, resnet_34_fpn
 from model.field_type_classification_head import (
     FieldTypeClassification,
     SimplifiedFieldTypeClassification,
@@ -231,12 +231,15 @@ class ViBERTgridNet(nn.Module):
                 self.bert_model = RobertaModel(self.bert_config)
 
         # backbone stuff
-        self.backbone_list = ["resnet_18_fpn"]
+        self.backbone_list = ["resnet_18_fpn", "resnet_34_fpn"]
         assert (
             backbone in self.backbone_list
         ), f"the given backbone {backbone} does not exists, see attribute backbone_list for all backbones"
         if backbone == "resnet_18_fpn":
             self.backbone = resnet_18_fpn(grid_channel=self.bert_hidden_size)
+            self.p_fuse_channel = 256
+        elif backbone == "resnet_34_fpn":
+            self.backbone = resnet_34_fpn(grid_channel=self.bert_hidden_size)
             self.p_fuse_channel = 256
         else:
             raise ValueError("no backbone loaded")
@@ -453,6 +456,7 @@ if __name__ == "__main__":
         image_max_size=800,
         test_image_min_size=512,
         tokenizer=tokenizer,
+        backbone="resnet_34_fpn",
         num_hard_positive_main_1=2,
         num_hard_negative_main_1=2,
         num_hard_positive_main_2=2,
@@ -486,12 +490,12 @@ if __name__ == "__main__":
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
-        # model.train()
-        # total_loss = model(
-        #     image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-        # )
+        model.train()
+        total_loss = model(
+            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+        )
 
-        # total_loss.backward()
+        total_loss.backward()
 
         model.eval()
         total_loss, pred_mask, pred_ss, gt_label, pred_label = model(

@@ -20,34 +20,67 @@ class BasicBlock(nn.Module):
     """
 
     def __init__(
-        self, in_channel: int,
+        self,
+        in_channel: int,
         out_channel: int,
         downsample: bool = False,
-        grid_channel: int = None
+        grid_channel: int = None,
     ) -> None:
         super().__init__()
         self.in_channel = in_channel
         self.out_channel = out_channel
         self.grid_channel = grid_channel
         if downsample:
-            self.conv_1 = nn.Conv2d(in_channels=in_channel, out_channels=out_channel,
-                                    kernel_size=3, stride=2, padding=1, bias=False)
-            self.conv_shortcut = nn.Conv2d(in_channels=in_channel, out_channels=out_channel,
-                                           kernel_size=1, stride=2, padding=0, bias=False)
+            self.conv_1 = nn.Conv2d(
+                in_channels=in_channel,
+                out_channels=out_channel,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
+            self.conv_shortcut = nn.Sequential(
+                nn.Conv2d(
+                    in_channels=in_channel,
+                    out_channels=out_channel,
+                    kernel_size=1,
+                    stride=2,
+                    padding=0,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(num_features=out_channel),
+            )
         else:
-            self.conv_1 = nn.Conv2d(in_channels=out_channel, out_channels=out_channel,
-                                    kernel_size=3, stride=1, padding=1, bias=False)
-            self.conv_shortcut = nn.Conv2d(in_channels=out_channel, out_channels=out_channel,
-                                           kernel_size=1, stride=1, padding=0, bias=False)
+            self.conv_1 = nn.Conv2d(
+                in_channels=out_channel,
+                out_channels=out_channel,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+            )
+            self.conv_shortcut = nn.Identity()
         self.bn_1 = nn.BatchNorm2d(out_channel)
         self.relu_1 = nn.ReLU(inplace=True)
 
         if self.grid_channel is not None:
-            self.conv_1_1 = nn.Conv2d(in_channels=out_channel+grid_channel, out_channels=out_channel,
-                                      kernel_size=1, stride=1, padding=0, bias=False)
+            self.conv_1_1 = nn.Conv2d(
+                in_channels=out_channel + grid_channel,
+                out_channels=out_channel,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+                bias=False,
+            )
 
-        self.conv_2 = nn.Conv2d(in_channels=out_channel, out_channels=out_channel,
-                                kernel_size=3, stride=1, padding=1, bias=False)
+        self.conv_2 = nn.Conv2d(
+            in_channels=out_channel,
+            out_channels=out_channel,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
         self.bn_2 = nn.BatchNorm2d(out_channel)
         self.relu_2 = nn.ReLU(inplace=True)
 
@@ -69,8 +102,8 @@ class BasicBlock(nn.Module):
 
 
 class EarlyFusionLayer(nn.Module):
-    """An adaption of normal ResNet layer. 
-    The first block takes the feature map and BERTgrid as input, 
+    """An adaption of normal ResNet layer.
+    The first block takes the feature map and BERTgrid as input,
     then apply early fusion. The following layers keep the same
     as the normal ResNet layers
 
@@ -89,6 +122,7 @@ class EarlyFusionLayer(nn.Module):
     downsample : bool, optional
         apply downsampling to the given feature map, by default False, by default True
     """
+
     def __init__(
         self,
         block,
@@ -99,13 +133,12 @@ class EarlyFusionLayer(nn.Module):
         downsample=True,
     ) -> None:
         super().__init__()
-        self.fuse_block = block(in_channel, out_channel,
-                                downsample=downsample, grid_channel=grid_channel)
+        self.fuse_block = block(
+            in_channel, out_channel, downsample=downsample, grid_channel=grid_channel
+        )
         layers = []
         for i in range(block_num - 1):
-            layers.append(
-                block(in_channel, out_channel, downsample=False)
-            )
+            layers.append(block(in_channel, out_channel, downsample=False))
         self.layers = nn.Sequential(*layers)
 
     def forward(self, x, grid):
@@ -138,51 +171,128 @@ class ResNetFPN_ViBERTgrid(nn.Module):
         size_list: List,
         grid_channel: int,
         pyramid_channel: int = 256,
-        fuse_channel: int = 256
+        fuse_channel: int = 256,
     ) -> None:
         super().__init__()
         self.conv_1 = nn.Sequential(
-            nn.Conv2d(in_channels=3, out_channels=64, kernel_size=7,
-                      stride=2, padding=3, bias=False),
+            nn.Conv2d(
+                in_channels=3,
+                out_channels=64,
+                kernel_size=7,
+                stride=2,
+                padding=3,
+                bias=False,
+            ),
             nn.BatchNorm2d(num_features=64),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
         )
         self.pool_1 = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
-        
-        self.conv_2_x = self._make_ResNet_layer(block, in_channel=64, out_channel=64,
-                                                block_num=size_list[0], downsample=False)
-        self.conv_3_x = EarlyFusionLayer(block, in_channel=64, out_channel=128,
-                                         block_num=size_list[1], grid_channel=grid_channel, downsample=True)
-        self.conv_4_x = self._make_ResNet_layer(block, in_channel=128, out_channel=256,
-                                                block_num=size_list[2], downsample=True)
-        self.conv_5_x = self._make_ResNet_layer(block, in_channel=256, out_channel=512,
-                                                block_num=size_list[3], downsample=True)
-        self.conv_6_x = nn.Conv2d(in_channels=512, out_channels=pyramid_channel,
-                                    kernel_size=1, stride=1, padding=0, bias=False)
-        self.skip_1 = nn.Conv2d(in_channels=256, out_channels=pyramid_channel,
-                                kernel_size=1, stride=1, padding=0, bias=False)
-        self.upsample_1 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.merge_1 = nn.Conv2d(in_channels=pyramid_channel, out_channels=pyramid_channel,
-                                 kernel_size=3, stride=1, padding=1, bias=False)
-        self.skip_2 = nn.Conv2d(in_channels=128, out_channels=pyramid_channel,
-                                kernel_size=1, stride=1, padding=0, bias=False)
-        self.upsample_2 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.merge_2 = nn.Conv2d(in_channels=pyramid_channel, out_channels=pyramid_channel,
-                                 kernel_size=3, stride=1, padding=1, bias=False)
-        self.skip_3 = nn.Conv2d(in_channels=64, out_channels=pyramid_channel,
-                                kernel_size=1, stride=1, padding=0, bias=False)
-        self.upsample_3 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.merge_3 = nn.Conv2d(in_channels=pyramid_channel, out_channels=pyramid_channel,
-                                 kernel_size=3, stride=1, padding=1, bias=False)
-        self.upsample_4 = nn.Upsample(scale_factor=2, mode='nearest')
 
-        self.fuse_up_1 = nn.Upsample(scale_factor=8, mode='nearest')
-        self.fuse_up_2 = nn.Upsample(scale_factor=4, mode='nearest')
-        self.fuse_up_3 = nn.Upsample(scale_factor=2, mode='nearest')
-        self.fuse = nn.Conv2d(in_channels=4 * pyramid_channel, out_channels=fuse_channel,
-                              kernel_size=1, stride=1, padding=0, bias=False)
+        self.conv_2_x = self._make_ResNet_layer(
+            block,
+            in_channel=64,
+            out_channel=64,
+            block_num=size_list[0],
+            downsample=False,
+        )
+        self.conv_3_x = EarlyFusionLayer(
+            block,
+            in_channel=64,
+            out_channel=128,
+            block_num=size_list[1],
+            grid_channel=grid_channel,
+            downsample=True,
+        )
+        self.conv_4_x = self._make_ResNet_layer(
+            block,
+            in_channel=128,
+            out_channel=256,
+            block_num=size_list[2],
+            downsample=True,
+        )
+        self.conv_5_x = self._make_ResNet_layer(
+            block,
+            in_channel=256,
+            out_channel=512,
+            block_num=size_list[3],
+            downsample=True,
+        )
+        self.conv_6_x = nn.Conv2d(
+            in_channels=512,
+            out_channels=pyramid_channel,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.skip_1 = nn.Conv2d(
+            in_channels=256,
+            out_channels=pyramid_channel,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.upsample_1 = nn.Upsample(scale_factor=2, mode="nearest")
+        self.merge_1 = nn.Conv2d(
+            in_channels=pyramid_channel,
+            out_channels=pyramid_channel,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
+        self.skip_2 = nn.Conv2d(
+            in_channels=128,
+            out_channels=pyramid_channel,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.upsample_2 = nn.Upsample(scale_factor=2, mode="nearest")
+        self.merge_2 = nn.Conv2d(
+            in_channels=pyramid_channel,
+            out_channels=pyramid_channel,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
+        self.skip_3 = nn.Conv2d(
+            in_channels=64,
+            out_channels=pyramid_channel,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+        self.upsample_3 = nn.Upsample(scale_factor=2, mode="nearest")
+        self.merge_3 = nn.Conv2d(
+            in_channels=pyramid_channel,
+            out_channels=pyramid_channel,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
+        self.upsample_4 = nn.Upsample(scale_factor=2, mode="nearest")
 
-    def _make_ResNet_layer(self, block, in_channel, out_channel, block_num, downsample=True):
+        self.fuse_up_1 = nn.Upsample(scale_factor=8, mode="nearest")
+        self.fuse_up_2 = nn.Upsample(scale_factor=4, mode="nearest")
+        self.fuse_up_3 = nn.Upsample(scale_factor=2, mode="nearest")
+        self.fuse = nn.Conv2d(
+            in_channels=4 * pyramid_channel,
+            out_channels=fuse_channel,
+            kernel_size=1,
+            stride=1,
+            padding=0,
+            bias=False,
+        )
+
+    def _make_ResNet_layer(
+        self, block, in_channel, out_channel, block_num, downsample=True
+    ):
         layers = []
         for i in range(block_num):
             if i == 0:
@@ -203,7 +313,7 @@ class ResNetFPN_ViBERTgrid(nn.Module):
 
         x_4 = self.conv_5_x(x_3)
         x_4 = self.conv_6_x(x_4)
-        
+
         x_5_1 = self.upsample_1(x_4)
         x_5_2 = self.skip_1(x_3)
         x_5 = self.merge_1(x_5_1 + x_5_2)
@@ -241,9 +351,16 @@ def resnet_18_fpn(grid_channel: int) -> nn.Module:
     """
     block = BasicBlock
     net = ResNetFPN_ViBERTgrid(
-        block=block,
-        size_list=[2, 2, 2, 2, 2],
-        grid_channel=grid_channel
+        block=block, size_list=[2, 2, 2, 2], grid_channel=grid_channel
+    )
+
+    return net
+
+
+def resnet_34_fpn(grid_channel: int) -> nn.Module:
+    block = BasicBlock
+    net = ResNetFPN_ViBERTgrid(
+        block=block, size_list=[3, 4, 6, 3], grid_channel=grid_channel
     )
 
     return net
