@@ -55,7 +55,10 @@ def SROIE_result_filter(raw_string: str, class_index: int):
             r"1-9])(?:1[012]|0[1-9])\d\d|\d\d(?:1[012]|0[1-9])(?:[12][0-9]|3[01]|0[1-9]))"
         )
         date_match = date_re.match(raw_string)
-        return date_match[0]
+        if date_match is not None:
+            return date_match[0]
+        else:
+            return None
     elif class_index == 3:
         # address
         return raw_string
@@ -63,7 +66,10 @@ def SROIE_result_filter(raw_string: str, class_index: int):
         # total
         total_re = re.compile("^\d+(\.\d+)?$")
         total_match = total_re.search(raw_string)
-        return total_match[0]
+        if total_match is not None:
+            return total_match[0]
+        else:
+            return None
 
 
 @torch.no_grad()
@@ -148,6 +154,10 @@ def evaluation_SROIE(
 
         pred_key_list = list()
         for class_all_result in pred_all_list:
+            if class_all_result is None or len(class_all_result) == 0:
+                pred_key_list.append("")
+                continue
+
             max_score = 0
             max_index = 0
             for curr_index, candidates in enumerate(class_all_result):
@@ -200,9 +210,15 @@ def evaluation_SROIE(
                 )
 
         precision = (
-            float(0) if (num_classes - 1) == 0 else float(precision_accum) / (curr_num_det)
+            float(0)
+            if (num_classes - 1) == 0
+            else float(precision_accum) / (curr_num_det)
         )
-        recall = float(1) if (num_classes - 1) == 0 else float(recall_accum) / (num_classes - 1)
+        recall = (
+            float(1)
+            if (num_classes - 1) == 0
+            else float(recall_accum) / (num_classes - 1)
+        )
         hmean = (
             0
             if (precision + recall) == 0
@@ -211,7 +227,7 @@ def evaluation_SROIE(
 
         method_recall_sum += recall_accum
         method_precision_sum += precision_accum
-        num_gt += (num_classes - 1)
+        num_gt += num_classes - 1
         num_det += curr_num_det
 
         per_sample_metrics[filename] = {
@@ -269,6 +285,7 @@ def main(args):
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
+    layer_mode = hyp["layer_mode"]
 
     classifier_mode = hyp["classifier_mode"]
 
@@ -309,6 +326,7 @@ def main(args):
         loss_control_lambda=loss_control_lambda,
         classifier_mode=classifier_mode,
         ohem_random=True,
+        layer_mode=layer_mode,
     )
     model = model.to(device)
     print(f"==> model created")

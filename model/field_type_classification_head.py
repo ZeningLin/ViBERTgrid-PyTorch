@@ -373,7 +373,7 @@ class SimplifiedFieldTypeClassification(nn.Module):
         self.num_classes = num_classes
         self.fuse_embedding_channel = fuse_embedding_channel
 
-        if layer_mode == "simp":
+        if layer_mode == "sigle":
             self.pos_neg_classification_net = SingleLayer(
                 in_features=fuse_embedding_channel, out_features=2, bias=True
             )
@@ -500,7 +500,7 @@ class CRFFieldTypeClassification(nn.Module):
         self.tag_to_idx[STOP_TAG] = self.num_classes + 1
 
         self.fuse_embedding_channel = fuse_embedding_channel
-        if layer_mode == "simp":
+        if layer_mode == "single":
             self.category_classification_net = SingleLayer(
                 in_features=fuse_embedding_channel,
                 out_features=self.num_tags,
