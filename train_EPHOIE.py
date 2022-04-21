@@ -133,6 +133,7 @@ def train(args):
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
+    layer_mode = hyp["layer_mode"]
 
     classifier_mode = hyp["classifier_mode"]
     eval_mode = hyp["eval_mode"]
@@ -189,6 +190,7 @@ def train(args):
         classifier_mode=classifier_mode,
         tag_to_idx=map_dict,
         ohem_random=ohem_random,
+        layer_mode=layer_mode,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)

@@ -70,13 +70,44 @@ class SingleLayer(nn.Module):
         return self.linear(x)
 
 
-class BinaryClassifier(nn.Module):
-    def __init__(self, in_channels, bias: bool = True) -> None:
+class MultipleLayer(nn.Module):
+    def __init__(self, in_features, out_features, bias: bool = True) -> None:
         super().__init__()
-        self.linear = nn.Linear(in_features=in_channels, out_features=1, bias=bias)
+        self.linear_1 = nn.Linear(
+            in_features=in_features, out_features=in_features // 2, bias=bias
+        )
+        self.nonlinear = nn.ReLU(inplace=True)
+        self.linear_2 = nn.Linear(
+            in_features=in_features // 2,
+            out_features=out_features,
+            bias=bias,
+        )
 
     def forward(self, x):
-        x = self.linear(x)
+        x = self.linear_1(x)
+        x = self.nonlinear(x)
+        x = self.linear_2(x)
+
+        return x
+
+
+class BinaryClassifier(nn.Module):
+    def __init__(
+        self, in_channels, bias: bool = True, layer_mode: str = "multi"
+    ) -> None:
+        super().__init__()
+        assert layer_mode in [
+            "single",
+            "multi",
+        ], f"layer_mode must be single or multi, {layer_mode} given"
+
+        if layer_mode == "single":
+            self.layer = SingleLayer(in_features=in_channels, out_features=1, bias=bias)
+        else:
+            self.layer = MultipleLayer(in_features=in_channels, out_features=1)
+
+    def forward(self, x):
+        x = self.layer(x)
         return x
 
 
@@ -173,13 +204,14 @@ class FieldTypeClassification(nn.Module):
         num_hard_positive_2: int = -1,
         num_hard_negative_2: int = -1,
         random: bool = False,
+        layer_mode: str = "multi",
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.fuse_embedding_channel = fuse_embedding_channel
 
         self.pos_neg_classification_net = BinaryClassifier(
-            in_channels=fuse_embedding_channel, bias=True
+            in_channels=fuse_embedding_channel, bias=True, layer_mode=layer_mode
         )
 
         self.pos_neg_classification_loss = BCELossOHEM(
@@ -191,7 +223,9 @@ class FieldTypeClassification(nn.Module):
         for idx in range(self.num_classes - 1):
             self.add_module(
                 f"category_classification_net_{idx}",
-                BinaryClassifier(in_channels=fuse_embedding_channel, bias=True),
+                BinaryClassifier(
+                    in_channels=fuse_embedding_channel, bias=True, layer_mode=layer_mode
+                ),
             )
             if loss_weights is not None:
                 self.add_module(
@@ -328,16 +362,33 @@ class SimplifiedFieldTypeClassification(nn.Module):
         num_hard_positive_2: int = -1,
         num_hard_negative_2: int = -1,
         random: bool = False,
+        layer_mode: str = "multi",
     ) -> None:
         super().__init__()
+        assert layer_mode in [
+            "single",
+            "multi",
+        ], f"layer_mode must be single or multi, {layer_mode} given"
+
         self.num_classes = num_classes
         self.fuse_embedding_channel = fuse_embedding_channel
-        self.pos_neg_classification_net = SingleLayer(
-            in_channels=fuse_embedding_channel, out_channels=2, bias=True
-        )
-        self.category_classification_net = SingleLayer(
-            in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
-        )
+
+        if layer_mode == "simp":
+            self.pos_neg_classification_net = SingleLayer(
+                in_channels=fuse_embedding_channel, out_channels=2, bias=True
+            )
+            self.category_classification_net = SingleLayer(
+                in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
+            )
+        else:
+            self.pos_neg_classification_net = MultipleLayer(
+                in_features=fuse_embedding_channel, out_features=2, bias=True
+            )
+            self.category_classification_net = MultipleLayer(
+                in_features=fuse_embedding_channel,
+                out_features=num_classes,
+            )
+
         self.pos_neg_classification_loss = CrossEntropyLossOHEM(
             num_hard_positive=num_hard_positive_1,
             num_hard_negative=num_hard_negative_1,
@@ -419,6 +470,7 @@ class CRFFieldTypeClassification(nn.Module):
         self,
         tag_to_idx: Dict,
         fuse_embedding_channel: int,
+        layer_mode: str = "multi",
     ) -> None:
         """field type classification head with CRF layer
             apply multiclass classification
@@ -432,6 +484,11 @@ class CRFFieldTypeClassification(nn.Module):
             number of channels of fuse embeddings
         """
         super().__init__()
+        assert layer_mode in [
+            "single",
+            "multi",
+        ], f"layer_mode must be single or multi, {layer_mode} given"
+
         self.num_classes = len(tag_to_idx)
         self.num_tags = self.num_classes + 2
 
@@ -443,9 +500,18 @@ class CRFFieldTypeClassification(nn.Module):
         self.tag_to_idx[STOP_TAG] = self.num_classes + 1
 
         self.fuse_embedding_channel = fuse_embedding_channel
-        self.category_classification_net = SingleLayer(
-            in_channels=fuse_embedding_channel, out_channels=self.num_tags, bias=True
-        )
+        if layer_mode == "simp":
+            self.category_classification_net = SingleLayer(
+                in_channels=fuse_embedding_channel,
+                out_channels=self.num_tags,
+                bias=True,
+            )
+        else:
+            self.category_classification_net = MultipleLayer(
+                in_features=fuse_embedding_channel,
+                out_features=self.num_tags,
+                bias=True,
+            )
 
         self.crf_layer = CRF(self.tag_to_idx)
 

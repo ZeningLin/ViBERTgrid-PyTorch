@@ -131,6 +131,7 @@ class ViBERTgridNet(nn.Module):
         classifier_mode: str = "full",
         tag_to_idx: Dict = None,
         ohem_random: bool = False,
+        layer_mode: str = "multi",
     ) -> None:
         super().__init__()
 
@@ -304,6 +305,7 @@ class ViBERTgridNet(nn.Module):
                 num_hard_positive_2=num_hard_positive_main_2,
                 num_hard_negative_2=num_hard_negative_main_2,
                 random=ohem_random,
+                layer_mode=layer_mode,
             )
 
             self.semantic_segmentation_head = SemanticSegmentationClassifier(
@@ -324,6 +326,7 @@ class ViBERTgridNet(nn.Module):
                 num_hard_positive_2=num_hard_positive_main_2,
                 num_hard_negative_2=num_hard_negative_main_2,
                 random=ohem_random,
+                layer_mode=layer_mode,
             )
 
             self.semantic_segmentation_head = SimplifiedSemanticSegmentationClassifier(
@@ -339,6 +342,7 @@ class ViBERTgridNet(nn.Module):
             self.field_type_classification_head = CRFFieldTypeClassification(
                 tag_to_idx=tag_to_idx,
                 fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                layer_mode=layer_mode,
             )
 
             self.semantic_segmentation_head = SemanticSegmentationClassifier(
@@ -465,10 +469,19 @@ if __name__ == "__main__":
 
     # train_batch = next(iter(train_loader))
     for train_batch in train_loader:
-        image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask = train_batch
+        (
+            image_list,
+            seg_indices,
+            token_classes,
+            ocr_coors,
+            ocr_corpus,
+            mask,
+        ) = train_batch
         image_list = tuple(image.to(device) for image in image_list)
         seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
-        token_classes = tuple(pos_neg_label.to(device) for pos_neg_label in token_classes)
+        token_classes = tuple(
+            pos_neg_label.to(device) for pos_neg_label in token_classes
+        )
         ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
