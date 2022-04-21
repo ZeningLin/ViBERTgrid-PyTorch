@@ -308,7 +308,7 @@ class ViBERTgridNet(nn.Module):
 
             self.semantic_segmentation_head = SemanticSegmentationClassifier(
                 p_fuse_channel=self.p_fuse_channel,
-                num_classes=self.num_classes,
+                num_classes=self.num_tokens,
                 loss_weights=self.loss_weights,
                 loss_1_sample_list=loss_aux_sample_list,
                 num_hard_positive=num_hard_positive_aux,
@@ -328,7 +328,7 @@ class ViBERTgridNet(nn.Module):
 
             self.semantic_segmentation_head = SimplifiedSemanticSegmentationClassifier(
                 p_fuse_channel=self.p_fuse_channel,
-                num_classes=self.num_classes,
+                num_classes=self.num_tokens,
                 loss_weights=self.loss_weights,
                 loss_1_sample_list=loss_aux_sample_list,
                 num_hard_positive=num_hard_positive_aux,
@@ -343,7 +343,7 @@ class ViBERTgridNet(nn.Module):
 
             self.semantic_segmentation_head = SemanticSegmentationClassifier(
                 p_fuse_channel=self.p_fuse_channel,
-                num_classes=self.num_classes,
+                num_classes=self.num_tokens,
                 loss_weights=self.loss_weights,
                 loss_1_sample_list=loss_aux_sample_list,
                 num_hard_positive=num_hard_positive_aux,
@@ -463,30 +463,31 @@ if __name__ == "__main__":
     )
     model = model.to(device)
 
-    train_batch = next(iter(train_loader))
-    image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask = train_batch
-    image_list = tuple(image.to(device) for image in image_list)
-    seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
-    token_classes = tuple(pos_neg_label.to(device) for pos_neg_label in token_classes)
-    ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
-    ocr_corpus = ocr_corpus.to(device)
-    mask = mask.to(device)
+    # train_batch = next(iter(train_loader))
+    for train_batch in train_loader:
+        image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask = train_batch
+        image_list = tuple(image.to(device) for image in image_list)
+        seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
+        token_classes = tuple(pos_neg_label.to(device) for pos_neg_label in token_classes)
+        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
+        ocr_corpus = ocr_corpus.to(device)
+        mask = mask.to(device)
 
-    # model.train()
-    # total_loss = model(
-    #     image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-    # )
+        # model.train()
+        # total_loss = model(
+        #     image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+        # )
 
-    # total_loss.backward()
+        # total_loss.backward()
 
-    model.eval()
-    total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
-        image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-    )
+        model.eval()
+        total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
+            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+        )
 
-    p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
-    # eval_result = token_F1_criteria({pred_label: gt_label})
-    print(report)
+        p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
+        # eval_result = token_F1_criteria({pred_label: gt_label})
+        print(report)
 
     print(
         "debug finished, total_loss = {} result: {}".format(

@@ -55,7 +55,7 @@ def SROIE_result_filter(raw_string: str, class_index: int):
             r"1-9])(?:1[012]|0[1-9])\d\d|\d\d(?:1[012]|0[1-9])(?:[12][0-9]|3[01]|0[1-9]))"
         )
         date_match = date_re.match(raw_string)
-        return date_match
+        return date_match[0]
     elif class_index == 3:
         # address
         return raw_string
@@ -63,7 +63,7 @@ def SROIE_result_filter(raw_string: str, class_index: int):
         # total
         total_re = re.compile("^\d+(\.\d+)?$")
         total_match = total_re.search(raw_string)
-        return total_match
+        return total_match[0]
 
 
 @torch.no_grad()
@@ -71,6 +71,7 @@ def evaluation_SROIE(
     model: torch.nn.Module,
     evaluation_loader: Iterable,
     device: torch.device,
+    tresh: float = 0,
 ):
     num_classes = len(SROIE_CLASS_LIST)
 
@@ -109,20 +110,17 @@ def evaluation_SROIE(
             image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
 
-        tresh = 0.6
-        pred_all_list = [list() for _ in range(num_classes - 1)]
+        pred_all_list = [list() for _ in range(num_classes)]
         curr_class_str = ""
         curr_class_score = 0.0
-        curr_class_seg_len = 00
+        curr_class_seg_len = 0
         prev_class = -1
         for seg_index in range(pred_label.shape[0]):
-            curr_pred_logits = pred_label[seg_index].softmax()
+            curr_pred_logits = pred_label[seg_index].softmax(dim=0)
             curr_pred_class: torch.Tensor = curr_pred_logits.argmax(dim=0)
-            if curr_pred_class == 0:
-                continue
-            curr_pred_score = curr_pred_logits[curr_pred_class]
+            curr_pred_score = curr_pred_logits[curr_pred_class].item()
             if curr_pred_score < tresh:
-                continue
+                curr_pred_class = 0
 
             if curr_pred_class == prev_class:
                 if curr_class_str.endswith("-"):
@@ -132,13 +130,21 @@ def evaluation_SROIE(
                 curr_class_score += curr_pred_score
                 curr_class_seg_len += 1
             else:
-                if prev_class > 0:
-                    pred_all_list[prev_class - 1].append(
+                if prev_class >= 0:
+                    pred_all_list[prev_class].append(
                         (curr_class_str, (curr_class_score / curr_class_seg_len))
                     )
 
                 curr_class_str = ocr_text[0][seg_index]
                 curr_class_score = curr_pred_score
+                curr_class_seg_len = 1
+
+            if seg_index == pred_label.shape[0] - 1:
+                pred_all_list[prev_class].append(
+                    (curr_class_str, (curr_class_score / curr_class_seg_len))
+                )
+
+            prev_class = curr_pred_class
 
         pred_key_list = list()
         for class_all_result in pred_all_list:
@@ -191,9 +197,9 @@ def evaluation_SROIE(
                 )
 
         precision = (
-            float(0) if num_classes == 0 else float(precision_accum) / num_classes
+            float(0) if (num_classes - 1) == 0 else float(precision_accum) / (num_classes - 1)
         )
-        recall = float(1) if num_classes == 0 else float(recall_accum) / num_classes
+        recall = float(1) if (num_classes - 1) == 0 else float(recall_accum) / (num_classes - 1)
         hmean = (
             0
             if (precision + recall) == 0
@@ -202,8 +208,8 @@ def evaluation_SROIE(
 
         method_recall_sum += recall_accum
         method_precision_sum += precision_accum
-        num_gt += num_classes
-        num_det += num_classes
+        num_gt += (num_classes - 1)
+        num_det += (num_classes - 1)
 
         per_sample_metrics[filename] = {
             "precision": precision,
