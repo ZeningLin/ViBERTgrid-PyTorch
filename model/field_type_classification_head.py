@@ -60,10 +60,10 @@ class ROIEmbedding(nn.Module):
 
 
 class SingleLayer(nn.Module):
-    def __init__(self, in_channels, out_channels, bias: bool = True) -> None:
+    def __init__(self, in_features, out_features, bias: bool = True) -> None:
         super().__init__()
         self.linear = nn.Linear(
-            in_features=in_channels, out_features=out_channels, bias=bias
+            in_features=in_features, out_features=out_features, bias=bias
         )
 
     def forward(self, x):
@@ -142,7 +142,7 @@ class LateFusion(nn.Module):
         )
 
         self.fuse_embedding_net = SingleLayer(
-            in_channels=self.BERT_dimension + 1024, out_channels=1024, bias=True
+            in_features=self.BERT_dimension + 1024, out_features=1024, bias=True
         )
 
     def forward(self, ROI_output: torch.Tensor, BERT_embeddings: Tuple[torch.Tensor]):
@@ -375,10 +375,10 @@ class SimplifiedFieldTypeClassification(nn.Module):
 
         if layer_mode == "simp":
             self.pos_neg_classification_net = SingleLayer(
-                in_channels=fuse_embedding_channel, out_channels=2, bias=True
+                in_features=fuse_embedding_channel, out_features=2, bias=True
             )
             self.category_classification_net = SingleLayer(
-                in_channels=fuse_embedding_channel, out_channels=num_classes, bias=True
+                in_features=fuse_embedding_channel, out_features=num_classes, bias=True
             )
         else:
             self.pos_neg_classification_net = MultipleLayer(
@@ -502,8 +502,8 @@ class CRFFieldTypeClassification(nn.Module):
         self.fuse_embedding_channel = fuse_embedding_channel
         if layer_mode == "simp":
             self.category_classification_net = SingleLayer(
-                in_channels=fuse_embedding_channel,
-                out_channels=self.num_tags,
+                in_features=fuse_embedding_channel,
+                out_features=self.num_tags,
                 bias=True,
             )
         else:
