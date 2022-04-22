@@ -101,6 +101,107 @@ class BasicBlock(nn.Module):
         return self.relu_2(x_m + x_c)
 
 
+class DBlock(nn.Module):
+    """Adaption of ResNet basic block, with optional ViBERTgrid early fusion.
+    Referring to
+    *He et al. Bag of Tricks for Image Classification with Convolutional Neural Networks. CVPR, 2019*
+
+    Parameters
+    ----------
+    in_channel : int
+        number of input channel
+    out_channel : int
+        number of output channel
+    downsample : bool, optional
+        apply downsampling to the given feature map, by default False
+    grid_channel : int, optional
+        number of ViBERTgrid channel, apply early fusion if given, by default None
+    """
+
+    def __init__(
+        self,
+        in_channel: int,
+        out_channel: int,
+        downsample: bool = False,
+        grid_channel: int = None,
+    ) -> None:
+        super().__init__()
+        self.in_channel = in_channel
+        self.out_channel = out_channel
+        self.grid_channel = grid_channel
+        if downsample:
+            self.conv_1 = nn.Conv2d(
+                in_channels=in_channel,
+                out_channels=out_channel,
+                kernel_size=3,
+                stride=2,
+                padding=1,
+                bias=False,
+            )
+            self.conv_shortcut = nn.Sequential(
+                # Use AvgPool for down samplilng rather than Conv2d
+                nn.AvgPool2d(kernel_size=2, stride=2),
+                nn.Conv2d(
+                    in_channels=in_channel,
+                    out_channels=out_channel,
+                    kernel_size=1,
+                    stride=1,
+                    padding=0,
+                    bias=False,
+                ),
+                nn.BatchNorm2d(num_features=out_channel),
+            )
+        else:
+            self.conv_1 = nn.Conv2d(
+                in_channels=out_channel,
+                out_channels=out_channel,
+                kernel_size=3,
+                stride=1,
+                padding=1,
+                bias=False,
+            )
+            self.conv_shortcut = nn.Identity()
+        self.bn_1 = nn.BatchNorm2d(out_channel)
+        self.relu_1 = nn.ReLU(inplace=True)
+
+        if self.grid_channel is not None:
+            self.conv_1_1 = nn.Conv2d(
+                in_channels=out_channel + grid_channel,
+                out_channels=out_channel,
+                kernel_size=1,
+                stride=1,
+                padding=0,
+                bias=False,
+            )
+
+        self.conv_2 = nn.Conv2d(
+            in_channels=out_channel,
+            out_channels=out_channel,
+            kernel_size=3,
+            stride=1,
+            padding=1,
+            bias=False,
+        )
+        self.bn_2 = nn.BatchNorm2d(out_channel)
+        self.relu_2 = nn.ReLU(inplace=True)
+
+    def forward(self, x: torch.Tensor, grid: torch.Tensor = None):
+        x_m = self.conv_1(x)
+        x_m = self.bn_1(x_m)
+        x_m = self.relu_1(x_m)
+
+        if grid is not None and self.grid_channel is not None:
+            x_g = torch.concat([x_m, grid], dim=1)
+            x_m = self.conv_1_1(x_g)
+
+        x_m = self.conv_2(x_m)
+        x_m = self.bn_2(x_m)
+
+        x_c = self.conv_shortcut(x)
+
+        return self.relu_2(x_m + x_c)
+
+
 class EarlyFusionLayer(nn.Module):
     """An adaption of normal ResNet layer.
     The first block takes the feature map and BERTgrid as input,
@@ -359,6 +460,37 @@ def resnet_18_fpn(grid_channel: int) -> nn.Module:
 
 def resnet_34_fpn(grid_channel: int) -> nn.Module:
     block = BasicBlock
+    net = ResNetFPN_ViBERTgrid(
+        block=block, size_list=[3, 4, 6, 3], grid_channel=grid_channel
+    )
+
+    return net
+
+
+def resnet_18_D_fpn(grid_channel: int) -> nn.Module:
+    """return ResNet_18_D_FPN
+
+    Parameters
+    ----------
+    grid_channel : int
+        number of channels in ViBERTgrid
+
+    Returns
+    -------
+    resnet_18_fpn: nn.Module
+        network
+
+    """
+    block = DBlock
+    net = ResNetFPN_ViBERTgrid(
+        block=block, size_list=[2, 2, 2, 2], grid_channel=grid_channel
+    )
+
+    return net
+
+
+def resnet_34_D_fpn(grid_channel: int) -> nn.Module:
+    block = DBlock
     net = ResNetFPN_ViBERTgrid(
         block=block, size_list=[3, 4, 6, 3], grid_channel=grid_channel
     )

@@ -14,7 +14,12 @@ from typing import Tuple, List, Any, Dict
 
 from model.BERTgrid_generator import BERTgridGenerator
 from model.grid_roi_align import GridROIAlign
-from model.ResNetFPN_ViBERTgrid import resnet_18_fpn, resnet_34_fpn
+from model.ResNetFPN_ViBERTgrid import (
+    resnet_18_fpn,
+    resnet_34_fpn,
+    resnet_18_D_fpn,
+    resnet_34_D_fpn,
+)
 from model.field_type_classification_head import (
     FieldTypeClassification,
     SimplifiedFieldTypeClassification,
@@ -232,7 +237,12 @@ class ViBERTgridNet(nn.Module):
                 self.bert_model = RobertaModel(self.bert_config)
 
         # backbone stuff
-        self.backbone_list = ["resnet_18_fpn", "resnet_34_fpn"]
+        self.backbone_list = [
+            "resnet_18_fpn",
+            "resnet_34_fpn",
+            "resnet_18_D_fpn",
+            "resnet_34_D_fpn",
+        ]
         assert (
             backbone in self.backbone_list
         ), f"the given backbone {backbone} does not exists, see attribute backbone_list for all backbones"
@@ -241,6 +251,12 @@ class ViBERTgridNet(nn.Module):
             self.p_fuse_channel = 256
         elif backbone == "resnet_34_fpn":
             self.backbone = resnet_34_fpn(grid_channel=self.bert_hidden_size)
+            self.p_fuse_channel = 256
+        elif backbone == "resnet_18_D_fpn":
+            self.backbone = resnet_18_D_fpn(grid_channel=self.bert_hidden_size)
+            self.p_fuse_channel = 256
+        elif backbone == "resnet_34_D_fpn":
+            self.backbone = resnet_34_D_fpn(grid_channel=self.bert_hidden_size)
             self.p_fuse_channel = 256
         else:
             raise ValueError("no backbone loaded")
