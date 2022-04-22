@@ -327,6 +327,7 @@ def main(args):
         classifier_mode=classifier_mode,
         ohem_random=True,
         layer_mode=layer_mode,
+        train=False
     )
     model = model.to(device)
     print(f"==> model created")
@@ -357,8 +358,8 @@ def main(args):
     )
 
     precision = res_dict["method"]["precision"]
-    recall = res_dict["method"]["precision"]
-    hmean = res_dict["method"]["precision"]
+    recall = res_dict["method"]["recall"]
+    hmean = res_dict["method"]["hmean"]
 
     print(f"precision[{precision:.4f}] recall[{recall:.4f}] F1[{hmean:.4f}]")
 

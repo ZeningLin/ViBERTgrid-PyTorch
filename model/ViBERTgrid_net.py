@@ -132,6 +132,7 @@ class ViBERTgridNet(nn.Module):
         tag_to_idx: Dict = None,
         ohem_random: bool = False,
         layer_mode: str = "multi",
+        train: bool = True,
     ) -> None:
         super().__init__()
 
@@ -197,7 +198,7 @@ class ViBERTgridNet(nn.Module):
             bert_model in self.bert_model_list.keys()
         ), f"the given bert model {bert_model} does not exists, see attribute bert_model_list for all bert_models"
         self.bert_hidden_size = self.bert_model_list[bert_model]
-        if self.training:
+        if train:
             print("loading pretrained")
             if "roberta-" in bert_model:
                 if tokenizer is None:
