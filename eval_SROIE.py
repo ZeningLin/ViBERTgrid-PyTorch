@@ -210,9 +210,7 @@ def evaluation_SROIE(
                 )
 
         precision = (
-            float(0)
-            if (num_classes - 1) == 0
-            else float(precision_accum) / (curr_num_det)
+            float(0) if (curr_num_det) == 0 else float(precision_accum) / (curr_num_det)
         )
         recall = (
             float(1)
@@ -327,7 +325,7 @@ def main(args):
         classifier_mode=classifier_mode,
         ohem_random=True,
         layer_mode=layer_mode,
-        train=False
+        train=False,
     )
     model = model.to(device)
     print(f"==> model created")
