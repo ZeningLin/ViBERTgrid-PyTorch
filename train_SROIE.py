@@ -24,6 +24,8 @@ from pipeline.distributed_utils import (
     save_on_master,
 )
 
+SROIE_CLASS_LIST = ["others", "company", "date", "address" ,"total"]
+
 TAG_TO_IDX = {
     "O": 0,
     "B-company": 1,
@@ -319,9 +321,10 @@ def train(args):
         logger=logger,
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
+        category_list=SROIE_CLASS_LIST,
     )
 
-    top_F1_tresh = 0.92
+    top_F1_tresh = 0.90
     top_F1 = 0
     print(f"==> start training")
     for epoch in range(start_epoch, end_epoch):
@@ -356,6 +359,7 @@ def train(args):
             logger=logger,
             eval_mode=eval_mode,
             tag_to_idx=map_dict,
+            category_list=SROIE_CLASS_LIST,
         )
 
         if F1 > top_F1:

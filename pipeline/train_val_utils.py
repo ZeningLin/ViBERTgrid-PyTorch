@@ -19,7 +19,7 @@ from pipeline.criteria import (
 )
 from utils.ViBERTgrid_visualize import inference_visualize, draw_box
 
-SROIE_CLASS_LIST = ["company", "date", "address", "total"]
+SROIE_CLASS_LIST = ["others", "company", "date", "address", "total"]
 
 EPHOIE_CLASS_LIST = [
     "其他",
@@ -357,7 +357,9 @@ def validate(
     eval_mode: str = None,
     tag_to_idx: Dict = None,
     strcmp_tresh: float = 0,
+    category_list: List = None,
 ):
+    num_classes = len(category_list)
     num_iter = len(validate_loader)
     start_time = time.time()
     iter_message = " ".join(
@@ -419,7 +421,7 @@ def validate(
         if distributed:
             torch.distributed.barrier()
 
-        if eval_mode == "strcmp":
+        if eval_mode == "strcmp" or eval_mode == "seq_and_str":
             pred_all_list = [list() for _ in range(num_classes)]
             curr_class_str = ""
             curr_class_score = 0.0
@@ -481,7 +483,7 @@ def validate(
                 if class_index == 0:
                     continue
                 curr_pred_str = pred_key_list[class_index]
-                curr_class_name = SROIE_CLASS_LIST[class_index]
+                curr_class_name = category_list[class_index]
                 curr_gt_str = key_dict[0][curr_class_name]
                 if len(curr_pred_str) != 0:
                     curr_num_det += 1
@@ -493,8 +495,9 @@ def validate(
             method_precision_sum += precision_accum
             num_gt += num_classes - 1
             num_det += curr_num_det
-        else:
-            pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
+            
+            
+        pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
         validate_loss = reduce_loss(validate_loss)
         validate_loss_value = validate_loss.item()
@@ -543,11 +546,12 @@ def validate(
         )
     elif eval_mode == "seq_and_str":
         assert tag_to_idx is not None
-        _, _, _, report = BIO_F1_criteria(
+        _, _, token_F1, report = BIO_F1_criteria(
             pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
         )
         print("==> token level result")
         print(report)
+        print(f"\t tokenF1: [{token_F1:.4f}]")
 
         recall = 0 if num_gt == 0 else method_recall_sum / num_gt
         precision = 0 if num_det == 0 else method_precision_sum / num_det
