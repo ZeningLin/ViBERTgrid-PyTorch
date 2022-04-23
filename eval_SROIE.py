@@ -196,7 +196,7 @@ def evaluation_SROIE(
             curr_pred_str = SROIE_result_filter(curr_pred_str, class_index)
             curr_class_name = SROIE_CLASS_LIST[class_index]
             curr_gt_str = key_dict[0][curr_class_name]
-            if curr_pred_str != "" or curr_pred_str != None:
+            if len(curr_pred_str) != 0:
                 curr_num_det += 1
             if curr_pred_str == curr_gt_str:
                 recall_accum += 1
