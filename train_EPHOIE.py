@@ -24,6 +24,21 @@ from pipeline.distributed_utils import (
     save_on_master,
 )
 
+EPHOIE_CLASS_LIST = [
+    "其他",
+    "年级",
+    "科目",
+    "学校",
+    "考试时间",
+    "班级",
+    "姓名",
+    "考号",
+    "分数",
+    "座号",
+    "学号",
+    "准考证号",
+]
+
 TAG_TO_IDX = {
     "O": 0,
     "B-grade": 1,
@@ -306,6 +321,7 @@ def train(args):
         logger=logger,
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
+        category_list=EPHOIE_CLASS_LIST,
     )
 
     top_F1_tresh = 0.97
@@ -343,6 +359,7 @@ def train(args):
             logger=logger,
             eval_mode=eval_mode,
             tag_to_idx=map_dict,
+            category_list=EPHOIE_CLASS_LIST,
         )
 
         if F1 > top_F1:

@@ -24,7 +24,7 @@ from pipeline.distributed_utils import (
     save_on_master,
 )
 
-SROIE_CLASS_LIST = ["others", "company", "date", "address" ,"total"]
+SROIE_CLASS_LIST = ["others", "company", "date", "address", "total"]
 
 TAG_TO_IDX = {
     "O": 0,

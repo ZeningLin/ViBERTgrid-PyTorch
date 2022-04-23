@@ -356,8 +356,8 @@ def validate(
     iter_msg: bool = True,
     eval_mode: str = None,
     tag_to_idx: Dict = None,
-    strcmp_tresh: float = 0,
     category_list: List = None,
+    strcmp_tresh: float = 0,
 ):
     num_classes = len(category_list)
     num_iter = len(validate_loader)
@@ -495,7 +495,6 @@ def validate(
             method_precision_sum += precision_accum
             num_gt += num_classes - 1
             num_det += curr_num_det
-            
             
         pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
