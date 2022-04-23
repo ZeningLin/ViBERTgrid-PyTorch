@@ -163,6 +163,8 @@ def train_one_epoch(
     distributed: bool = True,
     logger: TensorboardLogger = None,
     scaler: torch.cuda.amp.GradScaler = None,
+    loss_clip_tresh: float = 10,
+    clip_norm: float = 2,
 ):
     assert isinstance(
         lr_scheduler_cnn,
@@ -267,10 +269,6 @@ def train_one_epoch(
         train_loss_value = train_loss.item()
         mean_train_loss = (mean_train_loss * step + train_loss_value) / (step + 1)
 
-        if not math.isfinite(train_loss_value):
-            print(f"loss is {train_loss_value}, training will stop")
-            sys.exit(1)
-
         optimizer_cnn.zero_grad()
         optimizer_bert.zero_grad()
         if scaler is not None:
@@ -280,6 +278,8 @@ def train_one_epoch(
             scaler.update()
         else:
             train_loss.backward()
+            if train_loss > loss_clip_tresh:
+                torch.nn.utils.clip_grad_norm(model.parameters(), max_norm=clip_norm)
             optimizer_cnn.step()
             optimizer_bert.step()
 

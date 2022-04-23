@@ -35,7 +35,7 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.sample_list is None:
             return F.cross_entropy(
-                input,
+                input.float(),
                 target,
                 weight=self.weight,
                 ignore_index=self.ignore_index,
@@ -44,7 +44,7 @@ class CrossEntropyLossRandomSample(nn.CrossEntropyLoss):
             )
 
         ce_loss = F.cross_entropy(
-            input,
+            input.float(),
             target,
             weight=self.weight,
             ignore_index=self.ignore_index,
@@ -127,7 +127,7 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.num_hard_positive == -1 and self.num_hard_negative == -1:
             return F.cross_entropy(
-                input,
+                input.float(),
                 target,
                 weight=self.weight,
                 ignore_index=self.ignore_index,
@@ -136,7 +136,7 @@ class CrossEntropyLossOHEM(nn.CrossEntropyLoss):
             )
 
         ce_loss = F.cross_entropy(
-            input,
+            input.float(),
             target,
             weight=self.weight,
             ignore_index=self.ignore_index,
@@ -226,14 +226,14 @@ class BCELossRandomSample(nn.BCELoss):
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.sample_list is None:
             return F.binary_cross_entropy_with_logits(
-                input,
+                input.float(),
                 target,
                 weight=self.weight,
                 reduction=self.reduction,
             )
 
         ce_loss = F.binary_cross_entropy_with_logits(
-            input,
+            input.float(),
             target,
             weight=self.weight,
             reduction="none",
@@ -310,14 +310,14 @@ class BCELossOHEM(nn.BCELoss):
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.num_hard_positive == -1 and self.num_hard_negative == -1:
             return F.binary_cross_entropy_with_logits(
-                input,
+                input.float(),
                 target,
                 weight=self.weight,
                 reduction=self.reduction,
             )
 
         ce_loss = F.binary_cross_entropy_with_logits(
-            input,
+            input.float(),
             target,
             weight=self.weight,
             reduction="none",
