@@ -435,6 +435,7 @@ if __name__ == "__main__":
 
     from transformers import BertTokenizer, BertModel
     from data.SROIE_dataset import load_train_dataset
+    from pipeline.train_val_utils import validate
     from pipeline.criteria import token_F1_criteria, BIO_F1_criteria
 
     TAG_TO_IDX = {
@@ -488,43 +489,55 @@ if __name__ == "__main__":
     )
     model = model.to(device)
 
-    # train_batch = next(iter(train_loader))
-    for train_batch in train_loader:
-        (
-            image_list,
-            seg_indices,
-            token_classes,
-            ocr_coors,
-            ocr_corpus,
-            mask,
-        ) = train_batch
-        image_list = tuple(image.to(device) for image in image_list)
-        seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
-        token_classes = tuple(
-            pos_neg_label.to(device) for pos_neg_label in token_classes
-        )
-        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
-        ocr_corpus = ocr_corpus.to(device)
-        mask = mask.to(device)
-
-        model.train()
-        total_loss = model(
-            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-        )
-
-        total_loss.backward()
-
-        model.eval()
-        total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
-            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-        )
-
-        p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
-        # eval_result = token_F1_criteria({pred_label: gt_label})
-        print(report)
-
-    print(
-        "debug finished, total_loss = {} result: {}".format(
-            total_loss.item(), [p, r, f]
-        )
+    validate(
+        model=model,
+        validate_loader=val_loader,
+        device=device,
+        epoch=0,
+        logger=None,
+        distributed=False,
+        iter_msg=True,
+        eval_mode="seq_and_str",
+        tag_to_idx=TAG_TO_IDX,
     )
+
+    # train_batch = next(iter(train_loader))
+    # for train_batch in train_loader:
+    #     (
+    #         image_list,
+    #         seg_indices,
+    #         token_classes,
+    #         ocr_coors,
+    #         ocr_corpus,
+    #         mask,
+    #     ) = train_batch
+    #     image_list = tuple(image.to(device) for image in image_list)
+    #     seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
+    #     token_classes = tuple(
+    #         pos_neg_label.to(device) for pos_neg_label in token_classes
+    #     )
+    #     ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
+    #     ocr_corpus = ocr_corpus.to(device)
+    #     mask = mask.to(device)
+
+    #     model.train()
+    #     total_loss = model(
+    #         image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+    #     )
+
+    #     total_loss.backward()
+
+    #     model.eval()
+    #     total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
+    #         image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+    #     )
+
+    #     p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
+    #     # eval_result = token_F1_criteria({pred_label: gt_label})
+    #     print(report)
+
+    # print(
+    #     "debug finished, total_loss = {} result: {}".format(
+    #         total_loss.item(), [p, r, f]
+    #     )
+    # )

@@ -356,6 +356,7 @@ def validate(
     iter_msg: bool = True,
     eval_mode: str = None,
     tag_to_idx: Dict = None,
+    strcmp_tresh: float = 0,
 ):
     num_iter = len(validate_loader)
     start_time = time.time()
@@ -371,15 +372,20 @@ def validate(
             "\t",
             "epoch[{epoch}]",
             "validate_loss: {val_loss}",
-            "token_marco_precision: {precision:.4f}",
-            "token_marco_recall: {recall:.4f}",
-            "token_marco_F1: {F1:.4f}",
+            "precision: {precision:.4f}",
+            "recall: {recall:.4f}",
+            "F1: {F1:.4f}",
             "time used: {time_used:.0f}s",
             "\n",
             "per_class_F1: {per_class_F1}",
             "\n",
         ]
     )
+
+    num_gt = 0.0
+    num_det = 0.0
+    method_recall_sum = 0
+    method_precision_sum = 0
 
     model.eval()
     pred_gt_dict = dict()
@@ -392,8 +398,8 @@ def validate(
             ocr_coors,
             ocr_corpus,
             mask,
-            _,
-            _,
+            ocr_text,
+            key_dict,
         ) = validate_batch
 
         image_list = tuple(image.to(device) for image in image_list)
@@ -410,16 +416,91 @@ def validate(
             image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
 
-        pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
+        if distributed:
+            torch.distributed.barrier()
+
+        if eval_mode == "strcmp":
+            pred_all_list = [list() for _ in range(num_classes)]
+            curr_class_str = ""
+            curr_class_score = 0.0
+            curr_class_seg_len = 0
+            prev_class = -1
+            for seg_index in range(pred_label.shape[0]):
+                curr_pred_logits = pred_label[seg_index].softmax(dim=0)
+                curr_pred_class: torch.Tensor = curr_pred_logits.argmax(dim=0)
+                curr_pred_score = curr_pred_logits[curr_pred_class].item()
+                if curr_pred_score < strcmp_tresh:
+                    curr_pred_class = 0
+
+                if curr_pred_class == prev_class:
+                    if curr_class_str.endswith("-"):
+                        curr_class_str += ocr_text[0][seg_index]
+                    else:
+                        curr_class_str += " " + ocr_text[0][seg_index]
+                    curr_class_score += curr_pred_score
+                    curr_class_seg_len += 1
+                else:
+                    if prev_class >= 0:
+                        pred_all_list[prev_class].append(
+                            (curr_class_str, (curr_class_score / curr_class_seg_len))
+                        )
+
+                    curr_class_str = ocr_text[0][seg_index]
+                    curr_class_score = curr_pred_score
+                    curr_class_seg_len = 1
+
+                if seg_index == pred_label.shape[0] - 1:
+                    pred_all_list[prev_class].append(
+                        (curr_class_str, (curr_class_score / curr_class_seg_len))
+                    )
+
+                prev_class = curr_pred_class
+
+            pred_key_list = list()
+            for class_all_result in pred_all_list:
+                if class_all_result is None or len(class_all_result) == 0:
+                    pred_key_list.append("")
+                    continue
+
+                max_score = 0
+                max_index = 0
+                for curr_index, candidates in enumerate(class_all_result):
+                    curr_score = candidates[1]
+                    if curr_score > max_score:
+                        max_score = curr_score
+                        max_index = curr_index
+
+                pred_key_list.append(class_all_result[max_index][0])
+
+            recall = 0
+            precision = 0
+            recall_accum = 0.0
+            precision_accum = 0.0
+            curr_num_det = 0.0
+            for class_index in range(num_classes):
+                if class_index == 0:
+                    continue
+                curr_pred_str = pred_key_list[class_index]
+                curr_class_name = SROIE_CLASS_LIST[class_index]
+                curr_gt_str = key_dict[0][curr_class_name]
+                if len(curr_pred_str) != 0:
+                    curr_num_det += 1
+                if curr_pred_str == curr_gt_str:
+                    recall_accum += 1
+                    precision_accum += 1
+
+            method_recall_sum += recall_accum
+            method_precision_sum += precision_accum
+            num_gt += num_classes - 1
+            num_det += curr_num_det
+        else:
+            pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
         validate_loss = reduce_loss(validate_loss)
         validate_loss_value = validate_loss.item()
         mean_validate_loss = (mean_validate_loss * step + validate_loss_value) / (
             step + 1
         )
-
-        if distributed:
-            torch.distributed.barrier()
 
         if iter_msg:
             print(
@@ -430,43 +511,94 @@ def validate(
                 )
             )
 
-    if device != torch.device("cpu"):
+    if device != "cpu":
         torch.cuda.synchronize(device)
 
     if eval_mode == "seqeval":
         assert tag_to_idx is not None
-        marco_precision, marco_recall, marco_F1, report = BIO_F1_criteria(
+        precision, recall, F1, report = BIO_F1_criteria(
             pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
         )
         print(report)
-    else:
-        result_dict: Dict
-        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
-        num_classes = result_dict["num_classes"]
-        marco_precision = 0.0
-        marco_recall = 0.0
-        marco_F1 = 0.0
-        per_class_F1 = list()
-        for class_index in range(num_classes):
-            curr_dict: Dict
-            curr_dict = result_dict[class_index]
-            marco_precision += curr_dict["precision"]
-            marco_recall += curr_dict["recall"]
-            marco_F1 += curr_dict["F1"]
-            per_class_F1.append(curr_dict["F1"])
-
-        marco_precision /= num_classes
-        marco_recall /= num_classes
-        marco_F1 /= num_classes
+    elif eval_mode == "strcmp":
+        recall = 0 if num_gt == 0 else method_recall_sum / num_gt
+        precision = 0 if num_det == 0 else method_precision_sum / num_det
+        F1 = (
+            0
+            if recall + precision == 0
+            else 2 * recall * precision / (recall + precision)
+        )
 
         time_used = time.time() - start_time
         print(
             log_message.format(
                 epoch=(epoch + 1),
                 val_loss=validate_loss_value,
-                precision=marco_precision,
-                recall=marco_recall,
-                F1=marco_F1,
+                precision=precision,
+                recall=recall,
+                F1=F1,
+                time_used=time_used,
+                per_class_F1=None,
+            )
+        )
+    elif eval_mode == "seq_and_str":
+        assert tag_to_idx is not None
+        _, _, _, report = BIO_F1_criteria(
+            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
+        )
+        print("==> token level result")
+        print(report)
+
+        recall = 0 if num_gt == 0 else method_recall_sum / num_gt
+        precision = 0 if num_det == 0 else method_precision_sum / num_det
+        F1 = (
+            0
+            if recall + precision == 0
+            else 2 * recall * precision / (recall + precision)
+        )
+
+        time_used = time.time() - start_time
+        print("==> entity level result")
+        print(
+            log_message.format(
+                epoch=(epoch + 1),
+                val_loss=validate_loss_value,
+                precision=precision,
+                recall=recall,
+                F1=F1,
+                time_used=time_used,
+                per_class_F1=None,
+            )
+        )
+
+    else:
+        result_dict: Dict
+        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
+        num_classes = result_dict["num_classes"]
+        precision = 0.0
+        recall = 0.0
+        F1 = 0.0
+        per_class_F1 = list()
+        for class_index in range(num_classes):
+            curr_dict: Dict
+            curr_dict = result_dict[class_index]
+            precision += curr_dict["precision"]
+            recall += curr_dict["recall"]
+            F1 += curr_dict["F1"]
+            per_class_F1.append(curr_dict["F1"])
+
+        precision /= num_classes
+        recall /= num_classes
+        F1 /= num_classes
+
+        time_used = time.time() - start_time
+        print(
+            log_message.format(
+                epoch=(epoch + 1),
+                val_loss=validate_loss_value,
+                precision=precision,
+                recall=recall,
+                F1=F1,
                 time_used=time_used,
                 per_class_F1=per_class_F1,
             )
@@ -474,11 +606,11 @@ def validate(
 
     if logger is not None:
         logger.update(head="loss", validate_loss=validate_loss_value, step=epoch + 1)
-        logger.update(head="criteria", label_precision=marco_precision, step=epoch + 1)
-        logger.update(head="criteria", label_recall=marco_recall, step=epoch + 1)
-        logger.update(head="criteria", label_F1=marco_F1, step=epoch + 1)
+        logger.update(head="criteria", label_precision=precision, step=epoch + 1)
+        logger.update(head="criteria", label_recall=recall, step=epoch + 1)
+        logger.update(head="criteria", label_F1=F1, step=epoch + 1)
 
-    return marco_F1
+    return F1
 
 
 @torch.no_grad()
