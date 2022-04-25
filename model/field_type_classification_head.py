@@ -545,7 +545,7 @@ class CRFFieldTypeClassification(nn.Module):
             return (
                 score,
                 label_class.int(),
-                pred_class,
+                pred_class.detach().float(),
             )
         else:
             score = torch.zeros((1,), device=device)
@@ -559,9 +559,9 @@ class CRFFieldTypeClassification(nn.Module):
                 tag_seq_list.append(torch.tensor(tag_seq, device=device))
                 start_index = end_index
 
-            tag_seq = torch.cat(tag_seq_list, dim=0)
+            tag_seq = torch.cat(tag_seq_list, dim=0).unsqueeze(1)
             return (
                 score,
                 label_class.int(),
-                tag_seq,
+                tag_seq.detach().float(),
             )

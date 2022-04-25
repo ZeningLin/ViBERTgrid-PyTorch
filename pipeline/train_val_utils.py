@@ -495,7 +495,7 @@ def validate(
             method_precision_sum += precision_accum
             num_gt += num_classes - 1
             num_det += curr_num_det
-            
+
         pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
         validate_loss = reduce_loss(validate_loss)
@@ -522,6 +522,9 @@ def validate(
             pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
         )
         print(report)
+        print(
+            f"\t precision:[{precision:.4f}]  recall:[{recall:.4f}]  tokenF1: [{F1:.4f}]"
+        )
     elif eval_mode == "strcmp":
         recall = 0 if num_gt == 0 else method_recall_sum / num_gt
         precision = 0 if num_det == 0 else method_precision_sum / num_det
@@ -545,12 +548,14 @@ def validate(
         )
     elif eval_mode == "seq_and_str":
         assert tag_to_idx is not None
-        _, _, token_F1, report = BIO_F1_criteria(
+        token_precision, token_recall, token_F1, report = BIO_F1_criteria(
             pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
         )
         print("==> token level result")
         print(report)
-        print(f"\t tokenF1: [{token_F1:.4f}]")
+        print(
+            f"\t precision:[{token_precision:.4f}]  recall:[{token_recall:.4f}]  tokenF1: [{token_F1:.4f}]"
+        )
 
         recall = 0 if num_gt == 0 else method_recall_sum / num_gt
         precision = 0 if num_det == 0 else method_precision_sum / num_det
