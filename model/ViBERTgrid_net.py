@@ -240,6 +240,8 @@ class ViBERTgridNet(nn.Module):
         self.backbone_list = [
             "resnet_18_fpn",
             "resnet_34_fpn",
+            "resnet_18_fpn_pretrained",
+            "resnet_34_fpn_pretrained",
             "resnet_18_D_fpn",
             "resnet_34_D_fpn",
         ]
@@ -251,6 +253,12 @@ class ViBERTgridNet(nn.Module):
             self.p_fuse_channel = 256
         elif backbone == "resnet_34_fpn":
             self.backbone = resnet_34_fpn(grid_channel=self.bert_hidden_size)
+            self.p_fuse_channel = 256
+        elif backbone == "resnet_18_fpn_pretrained":
+            self.backbone = resnet_18_fpn(grid_channel=self.bert_hidden_size, pretrained=True)
+            self.p_fuse_channel = 256
+        elif backbone == "resnet_34_fpn_pretrained":
+            self.backbone = resnet_34_fpn(grid_channel=self.bert_hidden_size, pretrained=True)
             self.p_fuse_channel = 256
         elif backbone == "resnet_18_D_fpn":
             self.backbone = resnet_18_D_fpn(grid_channel=self.bert_hidden_size)
@@ -489,55 +497,55 @@ if __name__ == "__main__":
     )
     model = model.to(device)
 
-    validate(
-        model=model,
-        validate_loader=val_loader,
-        device=device,
-        epoch=0,
-        logger=None,
-        distributed=False,
-        iter_msg=True,
-        eval_mode="seq_and_str",
-        tag_to_idx=TAG_TO_IDX,
-    )
-
-    # train_batch = next(iter(train_loader))
-    # for train_batch in train_loader:
-    #     (
-    #         image_list,
-    #         seg_indices,
-    #         token_classes,
-    #         ocr_coors,
-    #         ocr_corpus,
-    #         mask,
-    #     ) = train_batch
-    #     image_list = tuple(image.to(device) for image in image_list)
-    #     seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
-    #     token_classes = tuple(
-    #         pos_neg_label.to(device) for pos_neg_label in token_classes
-    #     )
-    #     ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
-    #     ocr_corpus = ocr_corpus.to(device)
-    #     mask = mask.to(device)
-
-    #     model.train()
-    #     total_loss = model(
-    #         image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-    #     )
-
-    #     total_loss.backward()
-
-    #     model.eval()
-    #     total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
-    #         image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
-    #     )
-
-    #     p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
-    #     # eval_result = token_F1_criteria({pred_label: gt_label})
-    #     print(report)
-
-    # print(
-    #     "debug finished, total_loss = {} result: {}".format(
-    #         total_loss.item(), [p, r, f]
-    #     )
+    # validate(
+    #     model=model,
+    #     validate_loader=val_loader,
+    #     device=device,
+    #     epoch=0,
+    #     logger=None,
+    #     distributed=False,
+    #     iter_msg=True,
+    #     eval_mode="seq_and_str",
+    #     tag_to_idx=TAG_TO_IDX,
     # )
+
+    train_batch = next(iter(train_loader))
+    for train_batch in train_loader:
+        (
+            image_list,
+            seg_indices,
+            token_classes,
+            ocr_coors,
+            ocr_corpus,
+            mask,
+        ) = train_batch
+        image_list = tuple(image.to(device) for image in image_list)
+        seg_indices = tuple(class_label.to(device) for class_label in seg_indices)
+        token_classes = tuple(
+            pos_neg_label.to(device) for pos_neg_label in token_classes
+        )
+        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
+        ocr_corpus = ocr_corpus.to(device)
+        mask = mask.to(device)
+
+        model.train()
+        total_loss = model(
+            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+        )
+
+        total_loss.backward()
+
+        model.eval()
+        total_loss, pred_mask, pred_ss, gt_label, pred_label = model(
+            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
+        )
+
+        p, r, f, report = BIO_F1_criteria({pred_label: gt_label}, TAG_TO_IDX)
+        # eval_result = token_F1_criteria({pred_label: gt_label})
+        print(report)
+
+    print(
+        "debug finished, total_loss = {} result: {}".format(
+            total_loss.item(), [p, r, f]
+        )
+    )
