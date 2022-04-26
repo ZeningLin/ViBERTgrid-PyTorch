@@ -1,4 +1,5 @@
 import os
+import json
 
 from tqdm import tqdm
 from typing import Tuple, Optional, Callable
@@ -12,6 +13,21 @@ import torchvision
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import distributed, Dataset, DataLoader, BatchSampler
 from transformers import BertTokenizer
+
+EPHOIE_CLASS_LIST = {
+    "其他": 0,
+    "年级": 1,
+    "科目": 2,
+    "学校": 3,
+    "考试时间": 4,
+    "班级": 5,
+    "姓名": 6,
+    "考号": 7,
+    "分数": 8,
+    "座号": 9,
+    "学号": 10,
+    "准考证号": 11,
+}
 
 
 class EPHOIEDataset(Dataset):
@@ -144,6 +160,17 @@ class EPHOIEDataset(Dataset):
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
+            dir_key = os.path.join(
+                self.root, "kvpair", (self.filename_list[index] + ".txt")
+            )
+            with open(dir_key, "rb") as key_f:
+                key_dict = json.load(key_f)
+
+            full_key_dict = {k: "" for k, _ in EPHOIE_CLASS_LIST.items()}
+            full_key_dict["filename"] = self.filename_list[index]
+            for key, value in key_dict.items():
+                full_key_dict[key] = value
+
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
@@ -151,6 +178,7 @@ class EPHOIEDataset(Dataset):
                 torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
+                full_key_dict,
             )
 
     def _ViBERTgrid_coll_func(self, samples):
@@ -160,6 +188,7 @@ class EPHOIEDataset(Dataset):
         ocr_coors = []
         ocr_corpus = []
         ocr_text = []
+        key_dict_list = []
         for item in samples:
             imgs.append(item[0])
             seg_indices.append(item[1])
@@ -168,6 +197,7 @@ class EPHOIEDataset(Dataset):
             ocr_corpus.append(item[4])
             if self.train == False:
                 ocr_text.append(item[5])
+                key_dict_list.append(item[6])
 
         # pad sequence to generate mini-batch
         ocr_corpus = pad_sequence(ocr_corpus, batch_first=True)
@@ -193,7 +223,7 @@ class EPHOIEDataset(Dataset):
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
-                None,
+                tuple(key_dict_list),
             )
 
 
