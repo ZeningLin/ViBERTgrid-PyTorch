@@ -245,7 +245,7 @@ def train(args):
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
     lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
-        optimizer=optimizer_cnn, step_size=20, gamma=0.1
+        optimizer=optimizer_cnn, step_size=15, gamma=0.1
     )
     wd_schedule_values_cnn = cosine_scheduler(
         base_value=weight_decay_cnn,
@@ -255,7 +255,7 @@ def train(args):
     )
 
     lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
-        optimizer=optimizer_bert, step_size=50, gamma=0.1
+        optimizer=optimizer_bert, step_size=15, gamma=0.1
     )
     wd_schedule_values_bert = cosine_scheduler(
         base_value=weight_decay_bert,

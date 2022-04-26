@@ -230,9 +230,25 @@ class ViBERTgridNet(nn.Module):
         else:
             print("in evaluation mode, no pretrained will be loaded")
             if "bert-" in bert_model:
+                if tokenizer is None:
+                    self.tokenizer = BertTokenizer.from_pretrained(bert_model)
+                elif isinstance(tokenizer, BertTokenizer):
+                    self.tokenizer = tokenizer
+                else:
+                    raise ValueError(
+                        "invalid value of parameter tokenizer, must be None or callable BertTokenizer"
+                    )
                 self.bert_config = BertConfig()
                 self.bert_model = BertModel(self.bert_config)
             elif "roberta-" in bert_model:
+                if tokenizer is None:
+                    self.tokenizer = RobertaTokenizer.from_pretrained(bert_model)
+                elif isinstance(tokenizer, RobertaTokenizer):
+                    self.tokenizer = tokenizer
+                else:
+                    raise ValueError(
+                        "invalid value of parameter tokenizer, must be None or callable RobertaTokenizer"
+                    )
                 self.bert_config = RobertaConfig()
                 self.bert_model = RobertaModel(self.bert_config)
 
@@ -255,10 +271,14 @@ class ViBERTgridNet(nn.Module):
             self.backbone = resnet_34_fpn(grid_channel=self.bert_hidden_size)
             self.p_fuse_channel = 256
         elif backbone == "resnet_18_fpn_pretrained":
-            self.backbone = resnet_18_fpn(grid_channel=self.bert_hidden_size, pretrained=True)
+            self.backbone = resnet_18_fpn(
+                grid_channel=self.bert_hidden_size, pretrained=True
+            )
             self.p_fuse_channel = 256
         elif backbone == "resnet_34_fpn_pretrained":
-            self.backbone = resnet_34_fpn(grid_channel=self.bert_hidden_size, pretrained=True)
+            self.backbone = resnet_34_fpn(
+                grid_channel=self.bert_hidden_size, pretrained=True
+            )
             self.p_fuse_channel = 256
         elif backbone == "resnet_18_D_fpn":
             self.backbone = resnet_18_D_fpn(grid_channel=self.bert_hidden_size)
@@ -381,16 +401,6 @@ class ViBERTgridNet(nn.Module):
                 num_hard_positive=num_hard_positive_aux,
                 num_hard_negative=num_hard_negative_aux,
             )
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight)
-                if m.bias is not None:
-                    nn.init.normal_(m.bias, mean=0, std=0.01)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, mean=0, std=0.01)
-                if m.bias is not None:
-                    nn.init.normal_(m.bias, mean=0, std=0.01)
 
     def forward(
         self,

@@ -313,7 +313,7 @@ def main(args):
         image_max_size=image_max_size,
         test_image_min_size=test_image_min_size,
         bert_model=bert_version,
-        tokenizer=None,
+        tokenizer=tokenizer,
         backbone=backbone,
         grid_mode=grid_mode,
         early_fusion_downsampling_ratio=early_fusion_downsampling_ratio,
