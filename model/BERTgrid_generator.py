@@ -154,11 +154,13 @@ class BERTgridGenerator(nn.Module):
             curr_batch_aggre_embeddings = list()
 
             if self.grid_mode == "mean":
-                mean_embeddings = torch.zeros(curr_embeddings.shape[-1], device=device)
+                mean_embeddings = curr_embeddings[0]
                 num_tok = 1
+            elif self.grid_mode == "first":
+                curr_batch_aggre_embeddings.append(curr_embeddings[0].unsqueeze(0))
 
-            prev_seg_index = -1
-            for token_index in range(curr_embeddings.shape[0]):
+            prev_seg_index = curr_seg_index[0]
+            for token_index in range(1, curr_embeddings.shape[0]):
                 curr_seg_index = curr_seg_indices[token_index]
                 curr_embedding = curr_embeddings[token_index]
                 if curr_seg_index.int().item() == prev_seg_index:
@@ -172,14 +174,16 @@ class BERTgridGenerator(nn.Module):
                         mean_embeddings /= num_tok
                         curr_batch_aggre_embeddings.append(mean_embeddings.unsqueeze(0))
 
-                        mean_embeddings = torch.zeros(
-                            curr_embeddings.shape[-1], device=device
-                        )
+                        mean_embeddings = curr_embedding
                         num_tok = 1
                     elif self.grid_mode == "first":
                         curr_batch_aggre_embeddings.append(curr_embedding.unsqueeze(0))
 
                 prev_seg_index = curr_seg_index.int().item()
+            
+            if self.grid_mode == "mean":
+                mean_embeddings /= num_tok
+                curr_batch_aggre_embeddings.append(mean_embeddings.unsqueeze(0))
 
             curr_batch_aggre_embeddings = torch.cat(curr_batch_aggre_embeddings, dim=0)
             aggre_embeddings.append(curr_batch_aggre_embeddings)
