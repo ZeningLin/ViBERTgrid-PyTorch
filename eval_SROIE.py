@@ -366,7 +366,7 @@ def main(args):
     dir_save = os.path.basename(weights)
     dir_save = os.path.join("result", dir_save.replace(".pth", ".json"))
     with open(dir_save, "w") as f:
-        json.dump(res_dict, f)
+        json.dump(res_dict, f, ensure_ascii=False)
 
 
 if __name__ == "__main__":

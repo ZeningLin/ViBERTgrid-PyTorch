@@ -502,7 +502,7 @@ def validate(
 
             method_recall_sum += recall_accum
             method_precision_sum += precision_accum
-            num_gt += num_classes - 1
+            num_gt += curr_num_gt
             num_det += curr_num_det
 
         pred_gt_dict.update({pred_label.detach(): gt_label.detach()})

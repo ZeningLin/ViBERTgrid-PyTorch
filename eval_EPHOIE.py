@@ -14,20 +14,20 @@ from data.EPHOIE_dataset import load_test_data
 from typing import Iterable, Dict
 
 
-EPHOIE_CLASS_LIST = {
-    "其他": 0,
-    "年级": 1,
-    "科目": 2,
-    "学校": 3,
-    "考试时间": 4,
-    "班级": 5,
-    "姓名": 6,
-    "考号": 7,
-    "分数": 8,
-    "座号": 9,
-    "学号": 10,
-    "准考证号": 11,
-}
+EPHOIE_CLASS_LIST = [
+    "其他",
+    "年级",
+    "科目",
+    "学校",
+    "考试时间",
+    "班级",
+    "姓名",
+    "考号",
+    "分数",
+    "座号",
+    "学号",
+    "准考证号",
+]
 
 FILTER_WORD_LIST = [
     "年级",
@@ -43,6 +43,34 @@ FILTER_WORD_LIST = [
     "准考证号",
     "：",
     ":",
+    "得分",
+    "等级",
+    "班次",
+]
+
+SUBJECT_LIST = [
+    "语文",
+    "数学",
+    "英语",
+    "政治",
+    "道德与法治",
+    "思想品德",
+    "历史",
+    "地理",
+    "生物",
+    "化学",
+    "物理",
+    "文综",
+    "文科综合",
+    "理综",
+    "理科综合",
+    "科学",
+    "历史与社会",
+    "品德与社会",
+    "语文",
+    "历史与社会·道德与法治",
+    "数据的分析",
+    "地理生物",
 ]
 
 
@@ -57,6 +85,14 @@ def normal_filter(raw_string: str):
             filter_index_list.append(match_index + i)
 
     return filter_index_list
+
+
+def subject_category_filter(raw_string: str):
+    for item in SUBJECT_LIST:
+        if raw_string.find(item) > 0:
+            return item
+
+    return ""
 
 
 def grade_category_filter(raw_string: str):
@@ -102,6 +138,8 @@ def school_category_filter(raw_string: str):
 def EPHOIE_result_filter(raw_string: str, class_index: int):
     if class_index == 1:
         filter_index_list = grade_category_filter(raw_string)
+    elif class_index == 2:
+        filter_index_list = subject_category_filter(raw_string)
     elif class_index == 3:
         filter_index_list = school_category_filter(raw_string)
     else:
@@ -252,9 +290,7 @@ def evaluation_EPHOIE(
             float(0) if (curr_num_det) == 0 else float(precision_accum) / (curr_num_det)
         )
         recall = (
-            float(1)
-            if (num_classes - 1) == 0
-            else float(recall_accum) / (num_classes - 1)
+            float(1) if (num_classes - 1) == 0 else float(recall_accum) / (curr_num_gt)
         )
         hmean = (
             0
@@ -405,7 +441,7 @@ def main(args):
     dir_save = os.path.basename(weights)
     dir_save = os.path.join("result", dir_save.replace(".pth", ".json"))
     with open(dir_save, "w") as f:
-        json.dump(res_dict, f)
+        json.dump(res_dict, f, ensure_ascii=False)
 
 
 if __name__ == "__main__":
