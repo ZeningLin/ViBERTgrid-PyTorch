@@ -57,7 +57,8 @@ TAG_TO_IDX = {
     "I-testadmissionno": 22,
 }
 
-IDX_TO_TAG = {v:k for k, v in TAG_TO_IDX.items()}
+IDX_TO_TAG = {v: k for k, v in TAG_TO_IDX.items()}
+
 
 def generate_json(root_dir_txt_label: str, root_dir_json_label: str) -> None:
     """convert txt label to json format
@@ -90,62 +91,62 @@ def generate_json(root_dir_txt_label: str, root_dir_json_label: str) -> None:
         )
 
 
-def single_label_parser_full_seg(
-    dir_img: str,
-    dir_json_label: str,
-    dir_csv_label: str,
-    target_shape: Tuple[int] = None,
-):
-    image = plt.imread(dir_img)
-    image_shape = image.shape
+# def single_label_parser_full_seg(
+#     dir_img: str,
+#     dir_json_label: str,
+#     dir_csv_label: str,
+#     target_shape: Tuple[int] = None,
+# ):
+#     image = plt.imread(dir_img)
+#     image_shape = image.shape
 
-    if target_shape is not None:
-        assert (
-            len(target_shape) == 2
-        ), f"target_shape can only contain 2 elements, {len(target_shape)} given"
-        pos_neg_label = np.zeros(target_shape, dtype=int)
-        class_label = np.zeros(target_shape, dtype=int)
-    else:
-        pos_neg_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
-        class_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
+#     if target_shape is not None:
+#         assert (
+#             len(target_shape) == 2
+#         ), f"target_shape can only contain 2 elements, {len(target_shape)} given"
+#         pos_neg_label = np.zeros(target_shape, dtype=int)
+#         class_label = np.zeros(target_shape, dtype=int)
+#     else:
+#         pos_neg_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
+#         class_label = np.zeros((image_shape[0], image_shape[1]), dtype=int)
 
-    csv_label = pd.DataFrame(
-        columns=["left", "top", "right", "bot", "text", "data_class", "pos_neg"]
-    )
+#     csv_label = pd.DataFrame(
+#         columns=["left", "top", "right", "bot", "text", "data_class", "pos_neg"]
+#     )
 
-    with open(dir_json_label, "rb") as json_f:
-        json_label: Dict = json.load(json_f)
+#     with open(dir_json_label, "rb") as json_f:
+#         json_label: Dict = json.load(json_f)
 
-        for segment in json_label.values():
-            hor_candidate = segment["box"][::2]
-            ver_candidate = segment["box"][1::2]
+#         for segment in json_label.values():
+#             hor_candidate = segment["box"][::2]
+#             ver_candidate = segment["box"][1::2]
 
-            left_coor = int(min(hor_candidate))
-            top_coor = int(min(ver_candidate))
-            right_coor = int(max(hor_candidate))
-            bot_coor = int(max(ver_candidate))
-            width = right_coor - left_coor
+#             left_coor = int(min(hor_candidate))
+#             top_coor = int(min(ver_candidate))
+#             right_coor = int(max(hor_candidate))
+#             bot_coor = int(max(ver_candidate))
+#             width = right_coor - left_coor
 
-            if target_shape is not None:
-                scale_x = target_shape[0] / image_shape[0]
-                scale_y = target_shape[1] / image_shape[1]
-                left_coor *= scale_x
-                right_coor *= scale_x
-                top_coor *= scale_y
-                bot_coor *= scale_y
+#             if target_shape is not None:
+#                 scale_x = target_shape[0] / image_shape[0]
+#                 scale_y = target_shape[1] / image_shape[1]
+#                 left_coor *= scale_x
+#                 right_coor *= scale_x
+#                 top_coor *= scale_y
+#                 bot_coor *= scale_y
 
-            seg_class = list()
-            char_pos_neg = 0
+#             seg_class = list()
+#             char_pos_neg = 0
 
-            curr_row_dict = {
-                "left": [left_coor],
-                "top": [top_coor],
-                "right": [right_coor],
-                "bot": [bot_coor],
-                "text": [],
-                "data_class": [seg_class],
-                "pos_neg": [char_pos_neg],
-            }
+#             curr_row_dict = {
+#                 "left": [left_coor],
+#                 "top": [top_coor],
+#                 "right": [right_coor],
+#                 "bot": [bot_coor],
+#                 "text": [],
+#                 "data_class": [seg_class],
+#                 "pos_neg": [char_pos_neg],
+#             }
 
 
 def single_label_parser_ltp(
@@ -153,6 +154,7 @@ def single_label_parser_ltp(
     dir_json_label: str,
     dir_csv_label: str,
     target_shape: Tuple[int] = None,
+    discard_key: bool = False,
 ):
     from ltp import LTP
 
@@ -200,7 +202,13 @@ def single_label_parser_ltp(
             for seg_index in range(num_seg):
                 num_curr_char = len(splitted[0][seg_index])
                 curr_right = curr_left + char_width * num_curr_char
-                seg_class = segment["tag"][char_index]
+
+                seg_kv = segment["class"]
+                if discard_key and seg_kv == "KEY":
+                    seg_class = 0
+                else:
+                    seg_class = segment["tag"][char_index]
+
                 char_pos_neg = 2 if (seg_class == 0) else 1
 
                 curr_row_dict = {
@@ -228,6 +236,7 @@ def single_label_parser_char_BIO(
     dir_json_label: str,
     dir_csv_label: str,
     target_shape: Tuple[int] = None,
+    discard_key: bool = False,
 ):
     image = plt.imread(dir_img)
     image_shape = image.shape
@@ -270,6 +279,13 @@ def single_label_parser_char_BIO(
 
             for char_index in range(num_char):
                 curr_right = curr_left + char_width
+
+                char_kv = segment["class"]
+                if discard_key and char_kv == "KEY":
+                    char_class = 0
+                else:
+                    char_class = segment["tag"][char_index]
+
                 char_class = segment["tag"][char_index]
                 if char_class != 0:
                     if char_class != prev_class:
@@ -280,7 +296,7 @@ def single_label_parser_char_BIO(
                     cvt_char_class = 0
 
                 prev_class = char_class
-                
+
                 char_pos_neg = 2 if (char_class == 0) else 1
 
                 curr_row_dict = {
@@ -291,7 +307,7 @@ def single_label_parser_char_BIO(
                     "text": [str(segment["string"][char_index])],
                     "data_class": [cvt_char_class],
                     "pos_neg": [char_pos_neg],
-                    "class_str": [str(IDX_TO_TAG[cvt_char_class])]
+                    "class_str": [str(IDX_TO_TAG[cvt_char_class])],
                 }
                 curr_row_dataframe = pd.DataFrame(curr_row_dict)
                 csv_label = pd.concat(
@@ -308,6 +324,7 @@ def single_label_parser_char(
     dir_json_label: str,
     dir_csv_label: str,
     target_shape: Tuple[int] = None,
+    discard_key: bool = False,
 ):
     image = plt.imread(dir_img)
     image_shape = image.shape
@@ -348,7 +365,13 @@ def single_label_parser_char(
             curr_left = left_coor
             for char_index in range(num_char):
                 curr_right = curr_left + char_width
-                char_class = segment["tag"][char_index]
+
+                seg_kv = segment["class"]
+                if discard_key and seg_kv == "KEY":
+                    char_class = 0
+                else:
+                    char_class = segment["tag"][char_index]
+
                 char_pos_neg = 2 if (char_class == 0) else 1
 
                 curr_row_dict = {
@@ -371,7 +394,7 @@ def single_label_parser_char(
 
 
 MODE_DICT = {
-    "full_seg": single_label_parser_full_seg,
+    # "full_seg": single_label_parser_full_seg,
     "ltp": single_label_parser_ltp,
     "char": single_label_parser_char,
     "char_BIO": single_label_parser_char_BIO,
@@ -384,6 +407,7 @@ def data_preprocessing_pipeline(
     root_dir_csv_label: str,
     target_shape: Tuple[int],
     mode: str,
+    discard_key: bool,
 ) -> None:
     assert os.path.exists(
         root_dir_image
@@ -406,6 +430,7 @@ def data_preprocessing_pipeline(
             dir_json_label=dir_json_label,
             dir_csv_label=dir_csv_label,
             target_shape=target_shape,
+            discard_key=discard_key,
         )
 
 
@@ -413,8 +438,9 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--root")
-    parser.add_argument("--mode")
+    parser.add_argument("--root", type=str)
+    parser.add_argument("--mode", type=str)
+    parser.add_argument("--discard_key", type=bool)
     args = parser.parse_args()
 
     root = args.root
@@ -435,4 +461,5 @@ if __name__ == "__main__":
         root_dir_csv_label=csv_label_root,
         target_shape=None,
         mode=args.mode,
+        discard_key=args.discard_key,
     )
