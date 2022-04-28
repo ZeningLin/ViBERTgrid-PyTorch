@@ -358,7 +358,10 @@ def validate(
     tag_to_idx: Dict = None,
     category_list: List = None,
     strcmp_tresh: float = 0,
+    language: str = "eng"
 ):
+    assert language in ["eng", "chn"], f"language must be 'eng' or 'chn', f{language} given"
+
     num_classes = len(category_list)
     num_iter = len(validate_loader)
     start_time = time.time()
@@ -435,10 +438,13 @@ def validate(
                     curr_pred_class = 0
 
                 if curr_pred_class == prev_class:
-                    if curr_class_str.endswith("-"):
+                    if language == "eng":
+                        if curr_class_str.endswith("-"):
+                            curr_class_str += ocr_text[0][seg_index]
+                        else:
+                            curr_class_str += " " + ocr_text[0][seg_index]
+                    elif language == "chn":
                         curr_class_str += ocr_text[0][seg_index]
-                    else:
-                        curr_class_str += " " + ocr_text[0][seg_index]
                     curr_class_score += curr_pred_score
                     curr_class_seg_len += 1
                 else:
@@ -479,6 +485,7 @@ def validate(
             recall_accum = 0.0
             precision_accum = 0.0
             curr_num_det = 0.0
+            curr_num_gt = 0.0
             for class_index in range(num_classes):
                 if class_index == 0:
                     continue
@@ -487,9 +494,11 @@ def validate(
                 curr_gt_str = key_dict[0][curr_class_name]
                 if len(curr_pred_str) != 0:
                     curr_num_det += 1
-                if curr_pred_str == curr_gt_str:
-                    recall_accum += 1
-                    precision_accum += 1
+                if len(curr_gt_str) != 0:
+                    curr_num_gt += 1
+                    if curr_pred_str == curr_gt_str:
+                        recall_accum += 1
+                        precision_accum += 1
 
             method_recall_sum += recall_accum
             method_precision_sum += precision_accum
