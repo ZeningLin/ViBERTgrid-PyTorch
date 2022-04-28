@@ -159,7 +159,7 @@ class BERTgridGenerator(nn.Module):
             elif self.grid_mode == "first":
                 curr_batch_aggre_embeddings.append(curr_embeddings[0].unsqueeze(0))
 
-            prev_seg_index = curr_seg_index[0]
+            prev_seg_index = curr_seg_indices[0]
             for token_index in range(1, curr_embeddings.shape[0]):
                 curr_seg_index = curr_seg_indices[token_index]
                 curr_embedding = curr_embeddings[token_index]

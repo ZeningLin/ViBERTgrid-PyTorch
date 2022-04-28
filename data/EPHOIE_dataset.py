@@ -133,6 +133,9 @@ class EPHOIEDataset(Dataset):
                 row["top"] < row["bot"]
             ), f"coor error found in {self.filename_list[index]}"
 
+            if row["text"] == "" or row["text"] == " ":
+                continue
+            
             ocr_text.append(row["text"])
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
             seg_classes.append(row["data_class"])
@@ -141,8 +144,6 @@ class EPHOIEDataset(Dataset):
         seg_indices = []
         ocr_text_filter = []
         for seg_index, text in enumerate(ocr_text):
-            if text == "":
-                continue
             ocr_text_filter.append(text)
             curr_tokens = self.tokenizer.tokenize(text)
             for i in range(len(curr_tokens)):
@@ -368,8 +369,14 @@ def load_test_data(
 
 
 if __name__ == "__main__":
-    dir_processed = r"dir_to_root"
-    model_version = "bert-base-chinese"
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root")
+    parser.add_argument("--model")
+    args = parser.parse_args()
+
+    dir_processed = args.root
+    model_version = args.model
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     # train_loader, val_loader, image_mean, image_std = load_train_dataset(
@@ -385,8 +392,3 @@ if __name__ == "__main__":
 
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch
-        print(class_label[0].shape)
-        print(pos_neg[0].shape)
-        print(coor.shape)
-        print(corpus.shape)
-        print(mask.shape)
