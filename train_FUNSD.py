@@ -319,6 +319,7 @@ def train(args):
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
         category_list=FUNSD_CLASS_LIST,
+        seqeval_average="macro",
     )
 
     top_F1_tresh = 0.90
@@ -357,6 +358,7 @@ def train(args):
             eval_mode=eval_mode,
             tag_to_idx=map_dict,
             category_list=FUNSD_CLASS_LIST,
+            seqeval_average="macro",
         )
 
         if F1 > top_F1:

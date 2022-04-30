@@ -22,7 +22,7 @@ def token_classification_criteria(gt_label: torch.Tensor, pred_label: torch.Tens
 
 
 @torch.no_grad()
-def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: Dict):
+def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: Dict, average: str = "micro"):
     idx_to_tag = {v: k for k, v in tag_to_idx.items()}
 
     pred_list = list()
@@ -38,9 +38,9 @@ def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: 
         pred_list.append(pred)
         label_list.append(label)
 
-    p = precision_score(label_list, pred_list)
-    r = recall_score(label_list, pred_list)
-    f = f1_score(label_list, pred_list)
+    p = precision_score(label_list, pred_list, average=average)
+    r = recall_score(label_list, pred_list, average=average)
+    f = f1_score(label_list, pred_list, average=average)
     report = classification_report(label_list, pred_list)
 
     return p, r, f, report

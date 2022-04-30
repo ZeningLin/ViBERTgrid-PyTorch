@@ -358,9 +358,20 @@ def validate(
     tag_to_idx: Dict = None,
     category_list: List = None,
     strcmp_tresh: float = 0,
-    language: str = "eng"
+    language: str = "eng",
+    seqeval_average: str = "micro",
 ):
-    assert language in ["eng", "chn"], f"language must be 'eng' or 'chn', f{language} given"
+    assert language in [
+        "eng",
+        "chn",
+    ], f"language must be 'eng' or 'chn', f{language} given"
+
+    assert seqeval_average in [
+        "micro",
+        "macro",
+        "weighted",
+        None,
+    ], f"seqeval_average must be 'micro' or 'marco', {seqeval_average} given"
 
     num_classes = len(category_list)
     num_iter = len(validate_loader)
@@ -528,7 +539,7 @@ def validate(
     if eval_mode == "seqeval":
         assert tag_to_idx is not None
         precision, recall, F1, report = BIO_F1_criteria(
-            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
+            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx, average=seqeval_average
         )
         print(report)
         print(
@@ -558,7 +569,7 @@ def validate(
     elif eval_mode == "seq_and_str":
         assert tag_to_idx is not None
         token_precision, token_recall, token_F1, report = BIO_F1_criteria(
-            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx
+            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx, average=seqeval_average
         )
         print("==> token level result")
         print(report)

@@ -60,7 +60,9 @@ def evaluation_FUNSD(
 
         pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
-    p, r, f, report = BIO_F1_criteria(pred_gt_dict=pred_gt_dict, tag_to_idx=TAG_TO_IDX)
+    p, r, f, report = BIO_F1_criteria(
+        pred_gt_dict=pred_gt_dict, tag_to_idx=TAG_TO_IDX, average="macro"
+    )
 
     return p, r, f, report
 

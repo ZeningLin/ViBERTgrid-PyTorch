@@ -322,7 +322,8 @@ def train(args):
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
         category_list=EPHOIE_CLASS_LIST,
-        language="chn"
+        language="chn",
+        seqeval_average="macro",
     )
 
     top_F1_tresh = 0.97
@@ -361,7 +362,8 @@ def train(args):
             eval_mode=eval_mode,
             tag_to_idx=map_dict,
             category_list=EPHOIE_CLASS_LIST,
-            language="chn"
+            language="chn",
+            seqeval_average="macro",
         )
 
         if F1 > top_F1:
