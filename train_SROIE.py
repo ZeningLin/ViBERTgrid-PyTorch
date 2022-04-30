@@ -324,7 +324,7 @@ def train(args):
         category_list=SROIE_CLASS_LIST,
     )
 
-    top_F1_tresh = 0.90
+    top_F1_tresh = 0.95
     top_F1 = 0
     print(f"==> start training")
     for epoch in range(start_epoch, end_epoch):
