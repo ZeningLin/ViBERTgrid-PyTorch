@@ -28,8 +28,10 @@ def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: 
     pred_list = list()
     label_list = list()
     for pred, label in pred_gt_dict.items():
-        if len(pred.shape) != 1:
+        if len(pred.shape) != 1 and pred.shape[1] != 1:
             pred = pred.argmax(dim=1)
+        if len(pred.shape) != 1:
+            pred = pred.squeeze(1)
         pred = pred.int().cpu().tolist()
         pred = [idx_to_tag[item] for item in pred]
         label = label.int().cpu().tolist()

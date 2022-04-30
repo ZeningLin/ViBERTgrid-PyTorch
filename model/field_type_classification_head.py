@@ -543,7 +543,7 @@ class CRFFieldTypeClassification(nn.Module):
                 start_index = end_index
 
             return (
-                score,
+                score / len(batch_len_list),
                 label_class.int(),
                 pred_class.detach().float(),
             )
@@ -561,7 +561,7 @@ class CRFFieldTypeClassification(nn.Module):
 
             tag_seq = torch.cat(tag_seq_list, dim=0).unsqueeze(1)
             return (
-                score,
+                score / len(batch_len_list),
                 label_class.int(),
                 tag_seq.detach().float(),
             )
