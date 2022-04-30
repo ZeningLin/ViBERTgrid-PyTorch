@@ -7,7 +7,7 @@ import torch
 from transformers import BertTokenizer, RobertaTokenizer
 
 from model.ViBERTgrid_net import ViBERTgridNet
-from data.SROIE_dataset import load_test_data
+from data.FUNSD_dataset import load_test_data
 from pipeline.criteria import BIO_F1_criteria
 
 from typing import Iterable, Dict
@@ -38,13 +38,13 @@ def evaluation_FUNSD(
             ocr_coors,
             ocr_corpus,
             mask,
-            ocr_text,
-            key_dict,
+            _,
+            _,
         ) = evaluation_batch
 
         assert (
-            len(key_dict) == 1
-        ), f"batch size in evaluation must be 1, {len(key_dict)} given"
+            len(image_list) == 1
+        ), f"batch size in evaluation must be 1, {len(image_list)} given"
 
         image_list = tuple(image.to(device) for image in image_list)
         seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
@@ -108,7 +108,7 @@ def main(args):
 
     print(f"==> loading datasets")
     test_loader = load_test_data(
-        root=os.path.join(data_root, "test"),
+        root=os.path.join(data_root),
         num_workers=num_workers,
         tokenizer=tokenizer,
     )
