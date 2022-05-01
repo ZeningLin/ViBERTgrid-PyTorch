@@ -286,7 +286,6 @@ def single_label_parser_char_BIO(
                 else:
                     char_class = segment["tag"][char_index]
 
-                char_class = segment["tag"][char_index]
                 if char_class != 0:
                     if char_class != prev_class:
                         cvt_char_class = char_class * 2 - 1
