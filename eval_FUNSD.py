@@ -136,6 +136,7 @@ def main(args):
         ohem_random=True,
         layer_mode=layer_mode,
         train=False,
+        work_mode="eval",
     )
     model = model.to(device)
     print(f"==> model created")

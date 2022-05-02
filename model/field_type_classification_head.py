@@ -205,8 +205,17 @@ class FieldTypeClassification(nn.Module):
         num_hard_negative_2: int = -1,
         random: bool = False,
         layer_mode: str = "multi",
+        work_mode: str = "train",
     ) -> None:
         super().__init__()
+
+        assert work_mode in [
+            "train",
+            "eval",
+            "inference",
+        ], f"mode must be 'train' 'eval' or 'inference', {work_mode} given"
+        self.work_mode = work_mode
+
         self.num_classes = num_classes
         self.fuse_embedding_channel = fuse_embedding_channel
 
@@ -214,11 +223,14 @@ class FieldTypeClassification(nn.Module):
             in_channels=fuse_embedding_channel, bias=True, layer_mode=layer_mode
         )
 
-        self.pos_neg_classification_loss = BCELossOHEM(
-            num_hard_positive=num_hard_positive_1,
-            num_hard_negative=num_hard_negative_1,
-            random=random,
-        )
+        if self.work_mode == "inference":
+            self.pos_neg_classification_loss = None
+        else:
+            self.pos_neg_classification_loss = BCELossOHEM(
+                num_hard_positive=num_hard_positive_1,
+                num_hard_negative=num_hard_negative_1,
+                random=random,
+            )
 
         for idx in range(self.num_classes - 1):
             self.add_module(
@@ -227,32 +239,73 @@ class FieldTypeClassification(nn.Module):
                     in_channels=fuse_embedding_channel, bias=True, layer_mode=layer_mode
                 ),
             )
-            if loss_weights is not None:
-                self.add_module(
-                    f"field_type_classification_loss_{idx}",
-                    BCELossOHEM(
-                        num_hard_positive=num_hard_positive_2,
-                        num_hard_negative=num_hard_negative_2,
-                        weight=loss_weights,
-                        random=random,
-                    ),
-                )
-            else:
-                self.add_module(
-                    f"field_type_classification_loss_{idx}",
-                    BCELossOHEM(
-                        num_hard_positive=num_hard_positive_2,
-                        num_hard_negative=num_hard_negative_2,
-                        random=random,
-                    ),
-                )
+            if self.work_mode != "inference":
+                if loss_weights is not None:
+                    self.add_module(
+                        f"field_type_classification_loss_{idx}",
+                        BCELossOHEM(
+                            num_hard_positive=num_hard_positive_2,
+                            num_hard_negative=num_hard_negative_2,
+                            weight=loss_weights,
+                            random=random,
+                        ),
+                    )
+                else:
+                    self.add_module(
+                        f"field_type_classification_loss_{idx}",
+                        BCELossOHEM(
+                            num_hard_positive=num_hard_positive_2,
+                            num_hard_negative=num_hard_negative_2,
+                            random=random,
+                        ),
+                    )
 
         self.category_classification_net = AttrProxy(
             self, "category_classification_net_"
         )
-        self.field_type_classification_loss = AttrProxy(
-            self, "field_type_classification_loss_"
+
+        if self.work_mode == "inference":
+            self.field_type_classification_loss = None
+        else:
+            self.field_type_classification_loss = AttrProxy(
+                self, "field_type_classification_loss_"
+            )
+
+    def inference(
+        self,
+        fuse_embeddings: torch.Tensor,
+    ):
+        device = fuse_embeddings.device
+
+        # (bs*seq_len, 1024)
+        fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
+
+        # (pure_len, 1)
+        pred_pos_neg: torch.Tensor
+        pred_pos_neg = self.pos_neg_classification_net(fuse_embeddings).squeeze(1)
+
+        # (pure_len)
+        pred_pos_neg_mask = pred_pos_neg.detach().sigmoid().ge(0.5)
+        pos_fuse_embeddings = fuse_embeddings[pred_pos_neg_mask]
+
+        class_pred = torch.zeros(
+            (fuse_embeddings.shape[0], self.num_classes),
+            dtype=pred_pos_neg.dtype,
+            device=device,
         )
+        class_pred[:, 0] = pred_pos_neg.detach().sigmoid()
+
+        if pos_fuse_embeddings.shape[0] != 0:
+            for class_index in range(self.num_classes - 1):
+                curr_class_pred: torch.Tensor = self.category_classification_net[
+                    class_index
+                ](pos_fuse_embeddings).squeeze(1)
+
+                class_pred[:, class_index + 1][
+                    pred_pos_neg_mask
+                ] = curr_class_pred.detach().sigmoid()
+
+        return class_pred
 
     def forward(
         self,
@@ -363,8 +416,17 @@ class SimplifiedFieldTypeClassification(nn.Module):
         num_hard_negative_2: int = -1,
         random: bool = False,
         layer_mode: str = "multi",
+        work_mode: str = "train",
     ) -> None:
         super().__init__()
+
+        assert work_mode in [
+            "train",
+            "eval",
+            "inference",
+        ], f"mode must be 'train' 'eval' or 'inference', {work_mode} given"
+        self.work_mode = work_mode
+
         assert layer_mode in [
             "single",
             "multi",
@@ -374,39 +436,58 @@ class SimplifiedFieldTypeClassification(nn.Module):
         self.fuse_embedding_channel = fuse_embedding_channel
 
         if layer_mode == "sigle":
-            self.pos_neg_classification_net = SingleLayer(
-                in_features=fuse_embedding_channel, out_features=2, bias=True
-            )
+            if self.work_mode == "inference":
+                self.pos_neg_classification_net = None
+            else:
+                self.pos_neg_classification_net = SingleLayer(
+                    in_features=fuse_embedding_channel, out_features=2, bias=True
+                )
             self.category_classification_net = SingleLayer(
                 in_features=fuse_embedding_channel, out_features=num_classes, bias=True
             )
         else:
-            self.pos_neg_classification_net = MultipleLayer(
-                in_features=fuse_embedding_channel, out_features=2, bias=True
-            )
+            if self.work_mode == "inference":
+                self.pos_neg_classification_net = None
+            else:
+                self.pos_neg_classification_net = MultipleLayer(
+                    in_features=fuse_embedding_channel, out_features=2, bias=True
+                )
             self.category_classification_net = MultipleLayer(
                 in_features=fuse_embedding_channel,
                 out_features=num_classes,
             )
 
-        self.pos_neg_classification_loss = CrossEntropyLossOHEM(
-            num_hard_positive=num_hard_positive_1,
-            num_hard_negative=num_hard_negative_1,
-            random=random,
-        )
-        if loss_weights is not None:
-            self.field_type_classification_loss = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive_2,
-                num_hard_negative=num_hard_negative_2,
-                weight=loss_weights,
-                random=random,
-            )
+        if self.work_mode == "inference":
+            self.pos_neg_classification_loss = None
+            self.field_type_classification_loss = None
         else:
-            self.field_type_classification_loss = CrossEntropyLossOHEM(
-                num_hard_positive=num_hard_positive_2,
-                num_hard_negative=num_hard_negative_2,
+            self.pos_neg_classification_loss = CrossEntropyLossOHEM(
+                num_hard_positive=num_hard_positive_1,
+                num_hard_negative=num_hard_negative_1,
                 random=random,
             )
+            if loss_weights is not None:
+                self.field_type_classification_loss = CrossEntropyLossOHEM(
+                    num_hard_positive=num_hard_positive_2,
+                    num_hard_negative=num_hard_negative_2,
+                    weight=loss_weights,
+                    random=random,
+                )
+            else:
+                self.field_type_classification_loss = CrossEntropyLossOHEM(
+                    num_hard_positive=num_hard_positive_2,
+                    num_hard_negative=num_hard_negative_2,
+                    random=random,
+                )
+
+    def inference(self, fuse_embeddings: torch.Tensor):
+        # (bs*seq_len)
+        fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
+        # (pure_len, field_types)
+        pred_class: torch.Tensor
+        pred_class = self.category_classification_net(fuse_embeddings)
+
+        return pred_class.detach().softmax(dim=1)
 
     def forward(
         self,
@@ -471,6 +552,7 @@ class CRFFieldTypeClassification(nn.Module):
         tag_to_idx: Dict,
         fuse_embedding_channel: int,
         layer_mode: str = "multi",
+        work_mode: str = "train",
     ) -> None:
         """field type classification head with CRF layer
             apply multiclass classification
@@ -484,6 +566,14 @@ class CRFFieldTypeClassification(nn.Module):
             number of channels of fuse embeddings
         """
         super().__init__()
+
+        assert work_mode in [
+            "train",
+            "eval",
+            "inference",
+        ], f"mode must be 'train' 'eval' or 'inference', {work_mode} given"
+        self.work_mode = work_mode
+
         assert layer_mode in [
             "single",
             "multi",
@@ -514,6 +604,20 @@ class CRFFieldTypeClassification(nn.Module):
             )
 
         self.crf_layer = CRF(self.tag_to_idx)
+
+    def inference(self, fuse_embeddings: torch.Tensor):
+        device = fuse_embeddings.device
+
+        # (bs*seq_len)
+        fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
+
+        pred_class: torch.Tensor
+        pred_class = self.category_classification_net(fuse_embeddings)
+
+        _, tag_seq = self.crf_layer.inference(feats=pred_class)
+        tag_seq = torch.tensor(tag_seq, device=device).unsqueeze(1)
+
+        return tag_seq.detach().float()
 
     def forward(
         self,

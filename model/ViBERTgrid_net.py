@@ -137,9 +137,16 @@ class ViBERTgridNet(nn.Module):
         tag_to_idx: Dict = None,
         ohem_random: bool = False,
         layer_mode: str = "multi",
-        train: bool = True,
+        work_mode: str = "train",
     ) -> None:
         super().__init__()
+
+        assert work_mode in [
+            "train",
+            "eval",
+            "inference",
+        ], f"mode must be 'train' 'eval' or 'inference', {work_mode} given"
+        self.work_mode = work_mode
 
         self.num_classes = num_classes
         if tag_to_idx is not None:
@@ -203,7 +210,8 @@ class ViBERTgridNet(nn.Module):
             bert_model in self.bert_model_list.keys()
         ), f"the given bert model {bert_model} does not exists, see attribute bert_model_list for all bert_models"
         self.bert_hidden_size = self.bert_model_list[bert_model]
-        if train:
+
+        if self.work_mode == "train" or self.work_mode == "inference":
             print("loading pretrained")
             if "roberta-" in bert_model:
                 if tokenizer is None:
@@ -227,7 +235,7 @@ class ViBERTgridNet(nn.Module):
                 self.bert_model = BertModel.from_pretrained(bert_model)
             else:
                 raise ValueError("no tokenizer and bert model loaded")
-        else:
+        elif self.work_mode == "eval":
             print("in evaluation mode, no pretrained will be loaded")
             if "bert-" in bert_model:
                 if tokenizer is None:
@@ -305,9 +313,12 @@ class ViBERTgridNet(nn.Module):
         self.late_fusion_fuse_embedding_channel = late_fusion_fuse_embedding_channel
 
         # loss stuff
-        self.loss_control_lambda = loss_control_lambda
+        if self.work_mode == "inference":
+            self.loss_control_lambda = None
+        else:
+            self.loss_control_lambda = loss_control_lambda
 
-        if loss_weights is None:
+        if loss_weights is None or self.work_mode == "inference":
             self.loss_weights = None
         else:
             if isinstance(loss_weights, List):
@@ -344,63 +355,129 @@ class ViBERTgridNet(nn.Module):
         )
 
         if self.classifier_mode == "full":
-            self.field_type_classification_head = FieldTypeClassification(
-                num_classes=self.num_tokens,
-                fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
-                loss_weights=self.loss_weights,
-                num_hard_positive_1=num_hard_positive_main_1,
-                num_hard_negative_1=num_hard_negative_main_1,
-                num_hard_positive_2=num_hard_positive_main_2,
-                num_hard_negative_2=num_hard_negative_main_2,
-                random=ohem_random,
-                layer_mode=layer_mode,
-            )
+            if self.work_mode == "inference":
+                self.field_type_classification_head = FieldTypeClassification(
+                    num_classes=self.num_tokens,
+                    fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                    layer_mode=layer_mode,
+                    work_mode=self.work_mode,
+                )
+                self.semantic_segmentation_head = None
+            else:
+                self.field_type_classification_head = FieldTypeClassification(
+                    num_classes=self.num_tokens,
+                    fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                    loss_weights=self.loss_weights,
+                    num_hard_positive_1=num_hard_positive_main_1,
+                    num_hard_negative_1=num_hard_negative_main_1,
+                    num_hard_positive_2=num_hard_positive_main_2,
+                    num_hard_negative_2=num_hard_negative_main_2,
+                    random=ohem_random,
+                    layer_mode=layer_mode,
+                    work_mode=self.work_mode,
+                )
 
-            self.semantic_segmentation_head = SemanticSegmentationClassifier(
-                p_fuse_channel=self.p_fuse_channel,
-                num_classes=self.num_tokens,
-                loss_weights=self.loss_weights,
-                loss_1_sample_list=loss_aux_sample_list,
-                num_hard_positive=num_hard_positive_aux,
-                num_hard_negative=num_hard_negative_aux,
-            )
+                self.semantic_segmentation_head = SemanticSegmentationClassifier(
+                    p_fuse_channel=self.p_fuse_channel,
+                    num_classes=self.num_tokens,
+                    loss_weights=self.loss_weights,
+                    loss_1_sample_list=loss_aux_sample_list,
+                    num_hard_positive=num_hard_positive_aux,
+                    num_hard_negative=num_hard_negative_aux,
+                )
         elif self.classifier_mode == "simp":
-            self.field_type_classification_head = SimplifiedFieldTypeClassification(
-                num_classes=self.num_tokens,
-                fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
-                loss_weights=self.loss_weights,
-                num_hard_positive_1=num_hard_positive_main_1,
-                num_hard_negative_1=num_hard_negative_main_1,
-                num_hard_positive_2=num_hard_positive_main_2,
-                num_hard_negative_2=num_hard_negative_main_2,
-                random=ohem_random,
-                layer_mode=layer_mode,
-            )
+            if self.work_mode == "inference":
+                self.field_type_classification_head = SimplifiedFieldTypeClassification(
+                    num_classes=self.num_tokens,
+                    fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                    layer_mode=layer_mode,
+                    work_mode=self.work_mode,
+                )
+                self.semantic_segmentation_head = None
+            else:
+                self.field_type_classification_head = SimplifiedFieldTypeClassification(
+                    num_classes=self.num_tokens,
+                    fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
+                    loss_weights=self.loss_weights,
+                    num_hard_positive_1=num_hard_positive_main_1,
+                    num_hard_negative_1=num_hard_negative_main_1,
+                    num_hard_positive_2=num_hard_positive_main_2,
+                    num_hard_negative_2=num_hard_negative_main_2,
+                    random=ohem_random,
+                    layer_mode=layer_mode,
+                    work_mode=self.work_mode,
+                )
 
-            self.semantic_segmentation_head = SimplifiedSemanticSegmentationClassifier(
-                p_fuse_channel=self.p_fuse_channel,
-                num_classes=self.num_tokens,
-                loss_weights=self.loss_weights,
-                loss_1_sample_list=loss_aux_sample_list,
-                num_hard_positive=num_hard_positive_aux,
-                num_hard_negative=num_hard_negative_aux,
-            )
+                self.semantic_segmentation_head = (
+                    SimplifiedSemanticSegmentationClassifier(
+                        p_fuse_channel=self.p_fuse_channel,
+                        num_classes=self.num_tokens,
+                        loss_weights=self.loss_weights,
+                        loss_1_sample_list=loss_aux_sample_list,
+                        num_hard_positive=num_hard_positive_aux,
+                        num_hard_negative=num_hard_negative_aux,
+                    )
+                )
+
         elif self.classifier_mode == "crf":
             assert tag_to_idx is not None, f"tag_to_idx cannot be None in crf mode"
+
             self.field_type_classification_head = CRFFieldTypeClassification(
                 tag_to_idx=tag_to_idx,
                 fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
                 layer_mode=layer_mode,
             )
 
-            self.semantic_segmentation_head = SemanticSegmentationClassifier(
-                p_fuse_channel=self.p_fuse_channel,
-                num_classes=self.num_tokens,
-                loss_weights=self.loss_weights,
-                loss_1_sample_list=loss_aux_sample_list,
-                num_hard_positive=num_hard_positive_aux,
-                num_hard_negative=num_hard_negative_aux,
-            )
+            if self.work_mode == "inference":
+                self.semantic_segmentation_head = None
+            else:
+                self.semantic_segmentation_head = SemanticSegmentationClassifier(
+                    p_fuse_channel=self.p_fuse_channel,
+                    num_classes=self.num_tokens,
+                    loss_weights=self.loss_weights,
+                    loss_1_sample_list=loss_aux_sample_list,
+                    num_hard_positive=num_hard_positive_aux,
+                    num_hard_negative=num_hard_negative_aux,
+                )
+
+    def train(self, mode: bool = True):
+        self.work_mode = "train"
+        return super().train(mode)
+
+    def eval(self):
+        self.work_mode = "eval"
+        return super().eval()
+
+    def inference(
+        self,
+        image: Tuple[torch.Tensor],
+        seg_indices: Tuple[torch.Tensor],
+        coors: torch.Tensor,
+        corpus: torch.Tensor,
+        mask: torch.Tensor,
+    ):
+        image_list: ImageList
+        coors: torch.Tensor
+        image_list, coors = self.transform(image, coors)
+        image_shape = image_list.tensors.shape[-2:]
+
+        # generate BERTgrid
+        BERT_embeddings, BERTgrid_embeddings = self.BERTgrid_generator(
+            image_shape, seg_indices, corpus, mask, coors
+        )
+
+        # encode orig image, early fusion
+        p_fuse_features = self.backbone(image_list.tensors, BERTgrid_embeddings)
+
+        # Word-level Field Type Classification Head
+        # roi align
+        roi_features = self.grid_roi_align_net(p_fuse_features, coors, None)
+        # late fusion
+        late_fuse_embeddings = self.late_fusion_net(roi_features, BERT_embeddings)
+        # field type classification
+        pred_label = self.field_type_classification_head.inference(late_fuse_embeddings)
+
+        return pred_label
 
     def forward(
         self,
@@ -442,7 +519,7 @@ class ViBERTgridNet(nn.Module):
 
         total_loss = loss_c + self.loss_control_lambda * loss_aux
 
-        if self.training:
+        if self.work_mode == "train" and self.training:
             return total_loss
         else:
             return total_loss, pred_mask, pred_ss, gt_label, pred_label
