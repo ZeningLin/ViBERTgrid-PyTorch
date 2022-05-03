@@ -2,7 +2,12 @@ import torch
 import torch.nn as nn
 
 from model.crf import CRF, START_TAG, STOP_TAG
-from pipeline.custom_loss import CrossEntropyLossOHEM, BCELossOHEM
+from pipeline.custom_loss import (
+    CrossEntropyLossOHEM,
+    CrossEntropyLossRandomSample,
+    BCELossOHEM,
+    BCELossRandomSample,
+)
 
 from typing import Optional, Tuple, List, Any, Dict
 
@@ -226,10 +231,8 @@ class FieldTypeClassification(nn.Module):
         if self.work_mode == "inference":
             self.pos_neg_classification_loss = None
         else:
-            self.pos_neg_classification_loss = BCELossOHEM(
-                num_hard_positive=num_hard_positive_1,
-                num_hard_negative=num_hard_negative_1,
-                random=random,
+            self.pos_neg_classification_loss = BCELossRandomSample(
+                sample_list=[num_hard_negative_1, num_hard_positive_1]
             )
 
         for idx in range(self.num_classes - 1):
