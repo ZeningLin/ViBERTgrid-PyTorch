@@ -289,9 +289,7 @@ def evaluation_EPHOIE(
         precision = (
             float(0) if (curr_num_det) == 0 else float(precision_accum) / (curr_num_det)
         )
-        recall = (
-            float(1) if (num_classes - 1) == 0 else float(recall_accum) / (curr_num_gt)
-        )
+        recall = float(1) if (curr_num_gt) == 0 else float(recall_accum) / (curr_num_gt)
         hmean = (
             0
             if (precision + recall) == 0
@@ -401,7 +399,7 @@ def main(args):
         ohem_random=True,
         layer_mode=layer_mode,
         train=False,
-        work_mode="eval"
+        work_mode="eval",
     )
     model = model.to(device)
     print(f"==> model created")
