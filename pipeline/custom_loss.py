@@ -217,13 +217,21 @@ class BCELossRandomSample(nn.BCELoss):
         self.sample_list = sample_list
         if sample_list is not None:
             assert (
-                len(sample_list) >= 2
-            ), f"sample list must contains at least two elements, {len(sample_list)} given"
-            self.num_categories = len(sample_list)
+                len(sample_list) <= 2
+            ), f"sample list must contains at most two elements, {len(sample_list)} given"
+            if len(sample_list) == 2:
+                sample_list = [sample_list[0], sample_list[0]]
+            self.num_categories = 2
         else:
             self.num_categories = None
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        assert len(input.shape) == 1 or (
+            len(input.shape) == 2 and input.shape[1] == 1
+        ), f"invalid shape"
+        if len(input.shape) == 1:
+            input = input.squeeze(1)
+
         if self.sample_list is None:
             return F.binary_cross_entropy_with_logits(
                 input.float(),
@@ -239,22 +247,16 @@ class BCELossRandomSample(nn.BCELoss):
             reduction="none",
         )
 
-        mask_list = []
-        if self.num_categories == 2 and input.shape[1] >= 2:
-            mask_list = [(target == 0), (target != 0)]
-        else:
-            assert (
-                self.num_categories == input.shape[1]
-            ), f"shape mismatch, number of elements in sample_list must be 2 or equals dimensions \
-                of input, {self.num_categories} and {input.shape[1]} given"
-            for cate_index in range(self.num_categories):
-                mask_list.append(target == cate_index)
+        mask = input > 0
 
         loss_list = []
         num_keep_list = []
-        for index, mask in enumerate(mask_list):
+        for index in range(2):
             curr_sample = self.sample_list[index]
-            curr_loss = ce_loss[mask]
+            if index == 0:
+                curr_loss = ce_loss[~mask]
+            else:
+                curr_loss = ce_loss[mask]
             num_keep = min(curr_sample, curr_loss.shape[0])
             num_keep_list.append(num_keep)
 
