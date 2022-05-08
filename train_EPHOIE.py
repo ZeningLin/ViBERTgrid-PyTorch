@@ -148,6 +148,7 @@ def train(args):
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
+    add_pos_neg = hyp["add_pos_neg"]
     layer_mode = hyp["layer_mode"]
 
     classifier_mode = hyp["classifier_mode"]
@@ -195,6 +196,7 @@ def train(args):
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
+        add_pos_neg=add_pos_neg,
         num_hard_positive_main_1=num_hard_positive_main_1,
         num_hard_negative_main_1=num_hard_negative_main_1,
         num_hard_positive_main_2=num_hard_positive_main_2,

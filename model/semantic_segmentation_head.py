@@ -79,7 +79,15 @@ class SemanticSegmentationEncoder(nn.Module):
 
 
 class SemanticSegmentationBinaryClassifier(nn.Module):
+    """binaly classifier used in auxiliary semantic segmentation head
+
+        Parameters
+        ----------
+        in_channels : int
+            number of channels of the input feature
+    """
     def __init__(self, in_channels: int) -> None:
+        
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1)
 
@@ -89,7 +97,8 @@ class SemanticSegmentationBinaryClassifier(nn.Module):
 
 
 class SemanticSegmentationClassifier(nn.Module):
-    """auxiliary semantic segmentation head
+    """auxiliary semantic segmentation head,
+    the original two-stage design of the paper
 
     Parameters
     ----------
@@ -160,7 +169,6 @@ class SemanticSegmentationClassifier(nn.Module):
         ----------
         fuse_feature : torch.Tensor
             p_fuse feature maps mentioned in sec 3.1.2 of the paper
-        seg_indices: Tuple[torch.Tensor]
         seg_classes: Tuple[torch.Tensor]
         coors: torch.Tensor
 
@@ -288,7 +296,6 @@ class SimplifiedSemanticSegmentationClassifier(nn.Module):
         ----------
         fuse_feature : torch.Tensor
             p_fuse feature maps mentioned in sec 3.1.2 of the paper
-        seg_indices: Tuple[torch.Tensor]
         seg_classes: Tuple[torch.Tensor]
         coors: torch.Tensor
 

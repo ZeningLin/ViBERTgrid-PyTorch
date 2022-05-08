@@ -98,6 +98,8 @@ class ViBERTgridNet(nn.Module):
         number of hard negative samples for OHEM in `L_{AUX-2}`, by default -1
     loss_control_lambda : float, optional
         hyperparameters that controls the ratio of auxiliary loss and classification loss, by default 1
+    add_pos_neg: bool, optioanl
+        use an additional pos_neg classifier in simp mode which may boost the recall, by default True
     classifier_mode: str, optional
         determine which kind of classifier to use.
         "full" refers to the original classifier structure mentioned in the paper,
@@ -105,6 +107,20 @@ class ViBERTgridNet(nn.Module):
         "simp" refers to the simplified version, using a multi-class classifier for all the
         fields.
         "crf" refers to a field-type classification head with CRF layer.
+    tag_to_idx: Dict, optional
+        a dictionary that maps the class tag to index, by default None.
+        an example for SROIE is shown below:
+        `TAG_TO_IDX = {"O": 0, "B-company": 1, "B-date": 2, "B-address": 3, "B-total": 4}`
+    ohem_random: bool, optional
+        if `True`, apply random sampling and performs OHEM on the sampled loss. the trick may
+        boost the performance.
+    layer_mode: str, optional
+        choose type of classifier used, by default "single".
+        "single" use a single layer perceptron for dimension reduction.
+        "multi" use a two-layers MLP for dimension reduction.
+    work_mode: str, optional
+        work mode of the model, can be "train", "eval" or "inference".
+        determines the initialization method and return value types of the model.
 
     """
 
@@ -133,10 +149,11 @@ class ViBERTgridNet(nn.Module):
         num_hard_positive_aux=-1,
         num_hard_negative_aux=-1,
         loss_control_lambda: float = 1,
+        add_pos_neg: bool = True,
         classifier_mode: str = "full",
         tag_to_idx: Dict = None,
         ohem_random: bool = False,
-        layer_mode: str = "multi",
+        layer_mode: str = "single",
         work_mode: str = "train",
     ) -> None:
         super().__init__()
@@ -392,6 +409,7 @@ class ViBERTgridNet(nn.Module):
                     fuse_embedding_channel=self.late_fusion_fuse_embedding_channel,
                     layer_mode=layer_mode,
                     work_mode=self.work_mode,
+                    add_pos_neg=add_pos_neg,
                 )
                 self.semantic_segmentation_head = None
             else:

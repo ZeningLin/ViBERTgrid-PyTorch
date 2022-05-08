@@ -2,7 +2,7 @@
 
 A PyTorch implementation of CRF
 
-An adaption of `ADVANCED: MAKING DYNAMIC DECISIONS AND THE BI-LSTM CRF` at 
+An adaptation of `ADVANCED: MAKING DYNAMIC DECISIONS AND THE BI-LSTM CRF` at 
 https://pytorch.org/tutorials/beginner/nlp/advanced_tutorial.html#sadvanced-making-dynamic-decisions-and-the-bi-lstm-crf
 
 

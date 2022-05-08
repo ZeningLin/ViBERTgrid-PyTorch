@@ -68,15 +68,6 @@ def train(args):
     weight_decay_cnn = hyp["optimizer_cnn_hyp"]["weight_decay"]
     min_weight_decay_cnn = hyp["optimizer_cnn_hyp"]["min_weight_decay"]
 
-    # # SameOptimizer
-    # learning_rate_bert = hyp["optimizer_cnn_hyp"]["learning_rate"]
-    # min_learning_rate_bert = hyp["optimizer_cnn_hyp"]["min_learning_rate"]
-    # warm_up_epoches_bert = hyp["optimizer_cnn_hyp"]["warm_up_epoches"]
-    # warm_up_init_lr_bert = hyp["optimizer_cnn_hyp"]["warm_up_init_lr"]
-    # momentum_bert = hyp["optimizer_cnn_hyp"]["momentum"]
-    # weight_decay_bert = hyp["optimizer_cnn_hyp"]["weight_decay"]
-    # min_weight_decay_bert = hyp["optimizer_cnn_hyp"]["min_weight_decay"]
-
     learning_rate_bert = hyp["optimizer_bert_hyp"]["learning_rate"]
     min_learning_rate_bert = hyp["optimizer_bert_hyp"]["min_learning_rate"]
     warm_up_epoches_bert = hyp["optimizer_bert_hyp"]["warm_up_epoches"]
@@ -111,6 +102,7 @@ def train(args):
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
+    add_pos_neg = hyp["add_pos_neg"]
     layer_mode = hyp["layer_mode"]
 
     num_hard_positive_main_1 = hyp["num_hard_positive_main_1"]
@@ -168,6 +160,7 @@ def train(args):
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
+        add_pos_neg=add_pos_neg,
         num_hard_positive_main_1=num_hard_positive_main_1,
         num_hard_negative_main_1=num_hard_negative_main_1,
         num_hard_positive_main_2=num_hard_positive_main_2,

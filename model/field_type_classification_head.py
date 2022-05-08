@@ -24,6 +24,17 @@ class AttrProxy(object):
 
 
 class ROIEmbedding(nn.Module):
+    """roi embedding modules, convert rois to fused features
+
+    Parameters
+    ----------
+    num_channels : int
+        number of ROI channels
+    roi_shape : Any
+        shape of ROIs, can be `Tuple` with two elements or `int`
+
+    """
+
     def __init__(self, num_channels: int, roi_shape: Any) -> None:
         super().__init__()
 
@@ -180,7 +191,7 @@ class LateFusion(nn.Module):
 
 
 class FieldTypeClassification(nn.Module):
-    """field type classification
+    """field type classification, the original design of the paper
 
     apply classification to all ROIs seperately
 
@@ -192,10 +203,20 @@ class FieldTypeClassification(nn.Module):
         number of channels of fuse embeddings
     loss_weights : torch.Tensor, optional
         weights used in CrossEntropyLoss, deal with data imbalance, by default None
-    num_hard_positive: int
+    num_hard_positive_1: int, optional
+        number of hard positive samples for OHEM in `L_1`, by default -1
+    num_hard_negative_1: int, optional
+        number of hard negative samples for OHEM in `L_1`, by default -1
+    num_hard_positive_2: int, optional
         number of hard positive samples for OHEM in `L_2`, by default -1
-    num_hard_negative: int
+    num_hard_negative_2: int, optional
         number of hard negative samples for OHEM in `L_2`, by default -1
+    random: bool, optional
+        apply random sampling before OHEM or not
+    layer_mode: str, optional
+        type of classifier, `single` for a single layer perceptron, `multi` for a MLP
+    work_mode: str, optional
+        work mode of the model, controls the return values, `train`, `eval` or `inference`
 
     """
 
@@ -315,8 +336,7 @@ class FieldTypeClassification(nn.Module):
         fuse_embeddings: torch.Tensor,
         segment_classes: Tuple[torch.Tensor],
     ) -> torch.Tensor:
-        """a simplified version of field type classification,
-        discard the original two-stage classification pipeline
+        """field type classification,
 
         apply classification to all ROIs seperately
 
@@ -401,10 +421,22 @@ class SimplifiedFieldTypeClassification(nn.Module):
         number of channels of fuse embeddings
     loss_weights : torch.Tensor, optional
         weights used in CrossEntropyLoss, deal with data imbalance, by default None
-    num_hard_positive: int
+    num_hard_positive_1: int, optional
+        number of hard positive samples for OHEM in `L_1`, by default -1
+    num_hard_negative_1: int, optional
+        number of hard negative samples for OHEM in `L_1`, by default -1
+    num_hard_positive_2: int, optional
         number of hard positive samples for OHEM in `L_2`, by default -1
-    num_hard_negative: int
+    num_hard_negative_2: int, optional
         number of hard negative samples for OHEM in `L_2`, by default -1
+    random: bool, optional
+        apply random sampling before OHEM or not
+    layer_mode: str, optional
+        type of classifier, `single` for a single layer perceptron, `multi` for a MLP
+    work_mode: str, optional
+        work mode of the model, controls the return values, `train`, `eval` or `inference`
+    add_pos_neg: bool, optioanl
+        use an additional pos_neg classifier which may boost the recall, by default True
 
     """
 
@@ -420,6 +452,7 @@ class SimplifiedFieldTypeClassification(nn.Module):
         random: bool = False,
         layer_mode: str = "multi",
         work_mode: str = "train",
+        add_pos_neg: bool = True,
     ) -> None:
         super().__init__()
 
@@ -483,6 +516,8 @@ class SimplifiedFieldTypeClassification(nn.Module):
                     random=random,
                 )
 
+        self.add_pos_neg = add_pos_neg
+
     def inference(self, fuse_embeddings: torch.Tensor):
         # (bs*seq_len)
         fuse_embeddings = fuse_embeddings.reshape((-1, self.fuse_embedding_channel))
@@ -535,18 +570,22 @@ class SimplifiedFieldTypeClassification(nn.Module):
         pred_class: torch.Tensor
         pred_class = self.category_classification_net(fuse_embeddings)
         classification_loss_val = self.field_type_classification_loss(
-            # pred_class[pred_pos_neg_mask], label_class[pred_pos_neg_mask]
             pred_class,
             label_class,
         )
-        # pred_class[~pred_pos_neg_mask] = 0
 
-        return (
-            pos_neg_classification_loss_val + classification_loss_val,
-            # classification_loss_val,
-            label_class.int(),
-            pred_class.detach().softmax(dim=1),
-        )
+        if self.add_pos_neg:
+            return (
+                pos_neg_classification_loss_val + classification_loss_val,
+                label_class.int(),
+                pred_class.detach().softmax(dim=1),
+            )
+        else:
+            return (
+                classification_loss_val,
+                label_class.int(),
+                pred_class.detach().softmax(dim=1),
+            )
 
 
 class CRFFieldTypeClassification(nn.Module):
@@ -567,6 +606,11 @@ class CRFFieldTypeClassification(nn.Module):
             containing `num_classes` elements
         fuse_embedding_channel : int
             number of channels of fuse embeddings
+        layer_mode: str, optional
+            type of classifier, `single` for a single layer perceptron, `multi` for a MLP
+        work_mode: str, optional
+            work mode of the model, controls the return values, `train`, `eval` or `inference`
+        
         """
         super().__init__()
 
