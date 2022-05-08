@@ -79,7 +79,7 @@ Scripts for inference are provided in the `deployment` folder. run `inference_*`
 
 ------
 
-## Adaptation and Exploration in This Implementationi
+## Adaptation and Exploration in This Implementation
 
 ### 1. Data Level
 In the paper, the author applied classification on **word-level**, which predicts the key type of each word and join the words that belong to the same class as the final entity-level result. 
