@@ -1,25 +1,31 @@
-comment: "  "
+# brief description of the experiment, will be used in log/runs filename
+comment: " SROIE "
 
+
+########################################## distributed training stuff ##################################
 device: 'cuda'
 syncBN: True
+amp: True
 
+
+##################################### training and optimizer hyper-parameters ##########################
 start_epoch: 0
-end_epoch: 60
+end_epoch: 33
 batch_size: 2
 
 optimizer_cnn_hyp: # SGD -> CNN
- learning_rate: 0.002
+ learning_rate: 0.005
  min_learning_rate: 0.00001
- warm_up_epoches: 2
+ warm_up_epoches: 0
  warm_up_init_lr: 0.00001
  momentum: 0.9
- weight_decay: 0.0005
+ weight_decay: 0.005
  min_weight_decay: 0.005
 
 optimizer_bert_hyp: # AdamW -> BERT
- learning_rate: 0.00002
+ learning_rate: 0.00005
  min_learning_rate: 0.0000001
- warm_up_epoches: 2
+ warm_up_epoches: 0
  warm_up_init_lr: 0.0000001
  beta1: 0.9
  beta2: 0.999
@@ -27,77 +33,72 @@ optimizer_bert_hyp: # AdamW -> BERT
  weight_decay: 0.01
  min_weight_decay: 0.01
 
-# SROIE
-# num_hard_positive_main: 16
-# num_hard_negative_main: 16
-# loss_aux_sample_list:
-#  - 128
-#  - 256
-#  - 128
-# num_hard_positive_aux: 256
-# num_hard_negative_aux: 256
-
-# EPHOIE
-num_hard_positive_main: 4
-num_hard_negative_main: 4
-loss_aux_sample_list:
- - 64
- - 128
- - 64
-num_hard_positive_aux: 64
-num_hard_negative_aux: 64
+loss_weights: 
 
 
-save_top: "./weights/"
-save_log: "./log/"
+############################################## OHEM trick config #######################################
+num_hard_positive_main_1: 16    # number of hard positive samples in field-type-classification head loss 1
+num_hard_negative_main_1: 16    # number of hard negative samples in field-type-classification head loss 1
+num_hard_positive_main_2: 32    # number of hard positive samples in field-type-classification head loss 2
+num_hard_negative_main_2: 32    # number of hard negative samples in field-type-classification head loss 2
+loss_aux_sample_list:           # list of number of sampled in semantic segmentation head loss 1
+ - 256
+ - 512
+ - 256
+num_hard_positive_aux: 256      # number of hard positive samples in semantic segmentation head loss 2
+num_hard_negative_aux: 256      # number of hard negative samples in semantic segmentation head loss 2
+ohem_random: True               # apply random sampling before OHEM or not
 
-amp: True
-weights: ''
+# model structure config
+classifier_mode: "simp"                   # classifier mode, "simp", "full" or "crf"
+eval_mode: "seq_and_str"                  # type of evaluation tool, 
+                                          # "seqeval" uses seqeval package, calculates token-level result, works for all tag mode
+                                          # "strcmp" joins the result and compare the final strings (official SROIE eval method)
+                                          # "seq_and_str" uses both of "seqeval" and "strcmp"
+
+tag_mode: "B"                             # tagging mode, "B" for direct prediction, "BIO" for BIO prediction
+bert_version: "bert-base-uncased"         # [preferred]SROIE & FUNSD
+# bert_version: "roberta-base"            # SROIE & FUNSD
+# bert_version: "bert-base-chinese"       # EPHOIE
+backbone: "resnet_34_fpn_pretrained"      # type of CNN backbone
+grid_mode: "mean"                         # [does not need to change]mode of aggregating token features
+early_fusion_downsampling_ratio: 8        # [does not need to change]
+roi_shape: 7                              # [does not need to change]
+p_fuse_downsampling_ratio: 4              # [does not need to change]
+roi_align_output_reshape: False           # [does not need to change]
+late_fusion_fuse_embedding_channel: 1024  # [does not need to change]
+layer_mode: "single"                      # type of classifier, single for single layer perceptron, multi for MLP
+loss_control_lambda: 1                    # set 0 to discard the auxiliary semantic segmentation head
+add_pos_neg: True                         # use an additional positive-negative classifier in the simp mode
+
+############################################# saving stuff #############################################
+save_top: "./weights/"                    # dir to save weights of top performance models
+save_log: "./log/"                        # dir to save logs
+
+
+############################################ load check points #########################################
+weights: ''                               # dir to saved weights in the case of loading pretrained
+
+
+########################################### dataset loading stuff ######################################
 num_workers: 0
-data_root: "root-to-dir"
+data_root: "dir_to_root"                  # root of the raw dataset
 
-# # SROIE
-# num_classes: 5
-# image_mean:
-#  - 0.9248
-#  - 0.9224
-#  - 0.9215
-# image_std:
-#  - 0.1532
-#  - 0.1545
-#  - 0.1536
-
-# EPOHIE
-num_classes: 12
+## SROIE
+num_classes: 5
 image_mean:
- - 0.8913
- - 0.8958
- - 0.8906
+ - 0.9248
+ - 0.9224
+ - 0.9215
 image_std:
- - 0.1421
- - 0.1436
- - 0.1420
-
+ - 0.1532
+ - 0.1545
+ - 0.1536
 image_min_size:
  - 320
  - 416
  - 512
  - 608
- - 704
- 
+ - 704 
 image_max_size: 800
 test_image_min_size: 512
-
-# bert_version: "bert-base-uncased"  # SROIE
-bert_version: "bert-base-chinese"    # EPHOIE
-backbone: "resnet_18_fpn"
-grid_mode: "mean"
-early_fusion_downsampling_ratio: 8
-roi_shape: 7
-p_fuse_downsampling_ratio: 4
-roi_align_output_reshape: False
-late_fusion_fuse_embedding_channel: 1024
-
-loss_weights: 
-
-loss_control_lambda: 1
