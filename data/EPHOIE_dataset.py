@@ -1,4 +1,5 @@
 import os
+import json
 
 from tqdm import tqdm
 from typing import Tuple, Optional, Callable
@@ -13,10 +14,25 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import distributed, Dataset, DataLoader, BatchSampler
 from transformers import BertTokenizer
 
+EPHOIE_CLASS_LIST = {
+    "其他": 0,
+    "年级": 1,
+    "科目": 2,
+    "学校": 3,
+    "考试时间": 4,
+    "班级": 5,
+    "姓名": 6,
+    "考号": 7,
+    "分数": 8,
+    "座号": 9,
+    "学号": 10,
+    "准考证号": 11,
+}
+
 
 class EPHOIEDataset(Dataset):
     """The EPHOIE dataset
-       
+
        can be downloaded from https://github.com/HCIILAB/EPHOIE after application
 
 
@@ -85,24 +101,18 @@ class EPHOIEDataset(Dataset):
             with open(os.path.join(root, "train.txt"), "r") as f:
                 lines = f.readlines()
                 for line in lines:
-                    self.filename_list.append(line.strip('\n'))
+                    self.filename_list.append(line.strip("\n"))
         else:
             with open(os.path.join(root, "test.txt"), "r") as f:
                 lines = f.readlines()
                 for line in lines:
-                    self.filename_list.append(line.strip('\n'))
+                    self.filename_list.append(line.strip("\n"))
 
     def __len__(self) -> int:
         return len(self.filename_list)
 
     def __getitem__(self, index):
         dir_img = os.path.join(self.root, "image", (self.filename_list[index] + ".jpg"))
-        dir_class = os.path.join(
-            self.root, "_class", (self.filename_list[index] + ".npy")
-        )
-        dir_pos_neg = os.path.join(
-            self.root, "_pos_neg", (self.filename_list[index] + ".npy")
-        )
         dir_csv_label = os.path.join(
             self.root, "_label_csv", (self.filename_list[index] + ".csv")
         )
@@ -110,70 +120,87 @@ class EPHOIEDataset(Dataset):
         image = Image.open(dir_img)
         if len(image.split()) != 3:
             image = image.convert("RGB")
-        data_class = np.load(dir_class)
-        pos_neg = np.load(dir_pos_neg)
 
         ocr_coor = []
         ocr_text = []
+        seg_classes = []
         csv_label: pd.DataFrame = pd.read_csv(dir_csv_label)
         for _, row in csv_label.iterrows():
-            assert (row["left"] < row["right"]), f"coor error found in {self.filename_list[index]}"
-            assert (row["top"] < row["bot"]), f"coor error found in {self.filename_list[index]}"
+            assert (
+                row["left"] < row["right"]
+            ), f"coor error found in {self.filename_list[index]}"
+            assert (
+                row["top"] < row["bot"]
+            ), f"coor error found in {self.filename_list[index]}"
+
+            if row["text"] == "" or row["text"] == " ":
+                continue
             
             ocr_text.append(row["text"])
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
+            seg_classes.append(row["data_class"])
 
-        ocr_coor_expand = []
         ocr_tokens = []
+        seg_indices = []
         ocr_text_filter = []
-        for text, coor in zip(ocr_text, ocr_coor):
-            if text == "":
-                continue
+        for seg_index, text in enumerate(ocr_text):
+            ocr_text_filter.append(text)
             curr_tokens = self.tokenizer.tokenize(text)
             for i in range(len(curr_tokens)):
-                ocr_coor_expand.append(coor)
                 ocr_tokens.append(curr_tokens[i])
-                if self.train == False:
-                    ocr_text_filter.append(text)
+                seg_indices.append(seg_index)
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
         if self.train == True:
             return (
                 self.transform_img(image),
-                torch.tensor(data_class),
-                torch.tensor(pos_neg),
-                torch.tensor(ocr_coor_expand, dtype=torch.long),
+                torch.tensor(seg_indices, dtype=torch.int),
+                torch.tensor(seg_classes, dtype=torch.int),
+                torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
+            dir_key = os.path.join(
+                self.root, "kvpair", (self.filename_list[index] + ".txt")
+            )
+            with open(dir_key, "rb") as key_f:
+                key_dict = json.load(key_f)
+
+            full_key_dict = {k: "" for k, _ in EPHOIE_CLASS_LIST.items()}
+            full_key_dict["filename"] = self.filename_list[index]
+            for key, value in key_dict.items():
+                full_key_dict[key] = value
+
             return (
                 self.transform_img(image),
-                torch.tensor(data_class),
-                torch.tensor(pos_neg),
-                torch.tensor(ocr_coor_expand, dtype=torch.long),
+                torch.tensor(seg_indices, dtype=torch.int),
+                torch.tensor(seg_classes, dtype=torch.int),
+                torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
+                full_key_dict,
             )
 
     def _ViBERTgrid_coll_func(self, samples):
         imgs = []
-        class_labels = []
-        pos_neg_labels = []
+        seg_indices = []
+        token_classes = []
         ocr_coors = []
         ocr_corpus = []
         ocr_text = []
+        key_dict_list = []
         for item in samples:
             imgs.append(item[0])
-            class_labels.append(item[1])
-            pos_neg_labels.append(item[2])
+            seg_indices.append(item[1])
+            token_classes.append(item[2])
             ocr_coors.append(item[3])
             ocr_corpus.append(item[4])
             if self.train == False:
                 ocr_text.append(item[5])
+                key_dict_list.append(item[6])
 
         # pad sequence to generate mini-batch
-        ocr_coors = pad_sequence(ocr_coors, batch_first=True)
         ocr_corpus = pad_sequence(ocr_corpus, batch_first=True)
         # add mask to indicate valid corpus
         mask = torch.zeros(ocr_corpus.shape, dtype=torch.long)
@@ -182,21 +209,22 @@ class EPHOIEDataset(Dataset):
         if self.train == True:
             return (
                 tuple(imgs),
-                tuple(class_labels),
-                tuple(pos_neg_labels),
-                ocr_coors.int(),
+                tuple(seg_indices),
+                tuple(token_classes),
+                tuple(ocr_coors),
                 ocr_corpus,
                 mask.int(),
             )
         else:
             return (
                 tuple(imgs),
-                tuple(class_labels),
-                tuple(pos_neg_labels),
-                ocr_coors.int(),
+                tuple(seg_indices),
+                tuple(token_classes),
+                tuple(ocr_coors),
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
+                tuple(key_dict_list),
             )
 
 
@@ -295,7 +323,7 @@ def load_train_dataset_multi_gpu(
     val_loader : DataLoader
 
     """
-    
+
     EPHOIE_train_dataset = EPHOIEDataset(root, train=True, tokenizer=tokenizer)
     EPHOIE_val_dataset = EPHOIEDataset(root, train=False, tokenizer=tokenizer)
 
@@ -324,7 +352,9 @@ def load_train_dataset_multi_gpu(
 
 
 def load_test_data(
-    root: str, num_workers: int = 0, tokenizer: Optional[Callable] = None,
+    root: str,
+    num_workers: int = 0,
+    tokenizer: Optional[Callable] = None,
 ):
     EPHOIE_test_dataset = EPHOIEDataset(root=root, train=False, tokenizer=tokenizer)
     test_loader = DataLoader(
@@ -339,8 +369,14 @@ def load_test_data(
 
 
 if __name__ == "__main__":
-    dir_processed = r"dir_to_root"
-    model_version = "bert-base-chinese"
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root")
+    parser.add_argument("--model")
+    args = parser.parse_args()
+
+    dir_processed = args.root
+    model_version = args.model
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     # train_loader, val_loader, image_mean, image_std = load_train_dataset(
@@ -356,8 +392,3 @@ if __name__ == "__main__":
 
     for train_batch in tqdm(train_loader):
         img, class_label, pos_neg, coor, corpus, mask = train_batch
-        print(class_label[0].shape)
-        print(pos_neg[0].shape)
-        print(coor.shape)
-        print(corpus.shape)
-        print(mask.shape)

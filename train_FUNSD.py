@@ -8,7 +8,7 @@ import numpy as np
 import torch
 from transformers import BertTokenizer, RobertaTokenizer
 
-from data.EPHOIE_dataset import load_train_dataset_multi_gpu as EPHOIE_load_train
+from data.FUNSD_dataset import load_train_dataset_multi_gpu as FUNSD_load_train
 from model.ViBERTgrid_net import ViBERTgridNet
 from pipeline.train_val_utils import (
     train_one_epoch,
@@ -24,60 +24,23 @@ from pipeline.distributed_utils import (
     save_on_master,
 )
 
-EPHOIE_CLASS_LIST = [
-    "其他",
-    "年级",
-    "科目",
-    "学校",
-    "考试时间",
-    "班级",
-    "姓名",
-    "考号",
-    "分数",
-    "座号",
-    "学号",
-    "准考证号",
-]
+FUNSD_CLASS_LIST = ["other", "company", "answer", "header"]
 
 TAG_TO_IDX = {
     "O": 0,
-    "B-grade": 1,
-    "B-subject": 2,
-    "B-school": 3,
-    "B-testtime": 4,
-    "B-class": 5,
-    "B-name": 6,
-    "B-testno": 7,
-    "B-score": 8,
-    "B-seatno": 9,
-    "B-studentno": 10,
-    "B-testadmissionno": 11,
+    "B-question": 1,
+    "B-answer": 2,
+    "B-header": 3,
 }
 
 TAG_TO_IDX_BIO = {
     "O": 0,
-    "B-grade": 1,
-    "I-grade": 2,
-    "B-subject": 3,
-    "I-subject": 4,
-    "B-school": 5,
-    "I-school": 6,
-    "B-testtime": 7,
-    "I-testtime": 8,
-    "B-class": 9,
-    "I-class": 10,
-    "B-name": 11,
-    "I-name": 12,
-    "B-testno": 13,
-    "I-testno": 14,
-    "B-score": 15,
-    "I-score": 16,
-    "B-seatno": 17,
-    "I-seatno": 18,
-    "B-studentno": 19,
-    "I-studentno": 20,
-    "B-testadmissionno": 21,
-    "I-testadmissionno": 22,
+    "B-question": 1,
+    "I-question": 2,
+    "B-answer": 3,
+    "I-answer": 4,
+    "B-header": 5,
+    "I-header": 6,
 }
 
 
@@ -115,15 +78,6 @@ def train(args):
     weight_decay_bert = hyp["optimizer_bert_hyp"]["weight_decay"]
     min_weight_decay_bert = hyp["optimizer_bert_hyp"]["min_weight_decay"]
 
-    num_hard_positive_main_1 = hyp["num_hard_positive_main_1"]
-    num_hard_negative_main_1 = hyp["num_hard_negative_main_1"]
-    num_hard_positive_main_2 = hyp["num_hard_positive_main_2"]
-    num_hard_negative_main_2 = hyp["num_hard_negative_main_2"]
-    loss_aux_sample_list = hyp["loss_aux_sample_list"]
-    num_hard_positive_aux = hyp["num_hard_positive_aux"]
-    num_hard_negative_aux = hyp["num_hard_negative_aux"]
-    ohem_random = hyp["ohem_random"]
-
     save_top = hyp["save_top"]
     save_log = hyp["save_log"]
 
@@ -151,6 +105,15 @@ def train(args):
     add_pos_neg = hyp["add_pos_neg"]
     layer_mode = hyp["layer_mode"]
 
+    num_hard_positive_main_1 = hyp["num_hard_positive_main_1"]
+    num_hard_negative_main_1 = hyp["num_hard_negative_main_1"]
+    num_hard_positive_main_2 = hyp["num_hard_positive_main_2"]
+    num_hard_negative_main_2 = hyp["num_hard_negative_main_2"]
+    loss_aux_sample_list = hyp["loss_aux_sample_list"]
+    num_hard_positive_aux = hyp["num_hard_positive_aux"]
+    num_hard_negative_aux = hyp["num_hard_negative_aux"]
+    ohem_random = hyp["ohem_random"]
+
     classifier_mode = hyp["classifier_mode"]
     eval_mode = hyp["eval_mode"]
     tag_mode = hyp["tag_mode"]
@@ -170,12 +133,13 @@ def train(args):
     print(f"==> tokenizer {bert_version} loaded")
 
     print(f"==> loading datasets")
-    train_loader, val_loader, train_sampler = EPHOIE_load_train(
+    train_loader, val_loader, train_sampler = FUNSD_load_train(
         root=data_root,
         batch_size=batch_size,
         num_workers=num_workers,
         tokenizer=tokenizer,
     )
+
     print(f"==> dataset loaded")
 
     print(f"==> creating model {backbone} | {bert_version}")
@@ -244,8 +208,24 @@ def train(args):
         weight_decay=weight_decay_bert,
     )
 
+    # optimizer_bert = torch.optim.SGD(
+    #     params=params_bert,
+    #     lr=learning_rate_bert,
+    #     momentum=momentum_bert,
+    #     weight_decay=weight_decay_bert,
+    # )
+
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
+    # lr_schedule_values_cnn = cosine_scheduler(
+    #    base_value=learning_rate_cnn,
+    #    final_value=min_learning_rate_cnn,
+    #    epoches=end_epoch,
+    #    niter_per_ep=num_training_steps_per_epoch,
+    #    warmup_epoches=warm_up_epoches_cnn,
+    #    start_warmup_value=warm_up_init_lr_cnn,
+    #    warmup_steps=-1,
+    # )
     lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
         optimizer=optimizer_cnn, step_size=15, gamma=0.1
     )
@@ -256,6 +236,15 @@ def train(args):
         niter_per_ep=num_training_steps_per_epoch,
     )
 
+    # lr_schedule_values_bert = cosine_scheduler(
+    #    base_value=learning_rate_bert,
+    #    final_value=min_learning_rate_bert,
+    #    epoches=end_epoch,
+    #    niter_per_ep=num_training_steps_per_epoch,
+    #    warmup_epoches=warm_up_epoches_bert,
+    #    start_warmup_value=warm_up_init_lr_bert,
+    #    warmup_steps=-1,
+    # )
     lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
         optimizer=optimizer_bert, step_size=15, gamma=0.1
     )
@@ -299,8 +288,7 @@ def train(args):
             f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
         )
         comment = (
-            comment_exp
-            + f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_bs-{batch_size}"
+            comment_exp + f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}"
             f"_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_time-{curr_time_h}"
         )
         logger = TensorboardLogger(comment=comment)
@@ -323,12 +311,11 @@ def train(args):
         logger=logger,
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
-        category_list=EPHOIE_CLASS_LIST,
-        language="chn",
+        category_list=FUNSD_CLASS_LIST,
         seqeval_average="macro",
     )
 
-    top_F1_tresh = 0.97
+    top_F1_tresh = 0.90
     top_F1 = 0
     print(f"==> start training")
     for epoch in range(start_epoch, end_epoch):
@@ -363,8 +350,7 @@ def train(args):
             logger=logger,
             eval_mode=eval_mode,
             tag_to_idx=map_dict,
-            category_list=EPHOIE_CLASS_LIST,
-            language="chn",
+            category_list=FUNSD_CLASS_LIST,
             seqeval_average="macro",
         )
 
@@ -408,7 +394,7 @@ def train(args):
                     os.path.join(
                         save_top,
                         f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
-                        f"bb-{backbone}_bertv-{bert_version.replace('/', '_')}_epoch-{epoch}_F1-{F1}_time-{curr_time_h}.pth",
+                        f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_time-{curr_time_h}.pth",
                     ),
                 )
 

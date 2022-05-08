@@ -5,7 +5,7 @@ import math
 import numpy as np
 
 from collections import defaultdict
-from typing import Iterable, Any, List
+from typing import Iterable, Any, List, Dict
 
 import torch
 import torch.distributed
@@ -13,12 +13,13 @@ import torch.backends.cudnn
 
 from pipeline.distributed_utils import reduce_loss, get_world_size
 from pipeline.criteria import (
-    SROIE_label_classification_criteria,
-    SROIE_label_F1_criteria,
+    token_classification_criteria,
+    token_F1_criteria,
+    BIO_F1_criteria,
 )
 from utils.ViBERTgrid_visualize import inference_visualize, draw_box
 
-SROIE_CLASS_LIST = ["company", "date", "address", "total"]
+SROIE_CLASS_LIST = ["others", "company", "date", "address", "total"]
 
 EPHOIE_CLASS_LIST = [
     "其他",
@@ -159,8 +160,11 @@ def train_one_epoch(
     weight_decay_scheduler_cnn: Any,
     lr_scheduler_bert: Any,
     weight_decay_scheduler_bert: Any,
+    distributed: bool = True,
     logger: TensorboardLogger = None,
     scaler: torch.cuda.amp.GradScaler = None,
+    loss_clip_tresh: float = 10,
+    clip_norm: float = 2,
 ):
     assert isinstance(
         lr_scheduler_cnn,
@@ -243,35 +247,27 @@ def train_one_epoch(
 
         (
             image_list,
-            class_labels,
-            pos_neg_labels,
+            seg_indices,
+            token_classes,
             ocr_coors,
             ocr_corpus,
             mask,
         ) = train_batch
 
         image_list = tuple(image.to(device) for image in image_list)
-        class_labels = tuple(class_label.to(device) for class_label in class_labels)
-        pos_neg_labels = tuple(
-            pos_neg_label.to(device) for pos_neg_label in pos_neg_labels
-        )
-        ocr_coors = ocr_coors.to(device)
+        seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
+        token_classes = tuple(token_class.to(device) for token_class in token_classes)
+        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
         with torch.cuda.amp.autocast(enabled=scaler is not None):
             train_loss = model(
-                image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+                image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
             )
 
-        # torch.distributed.barrier()
-        # train_loss = reduce_loss(train_loss)
         train_loss_value = train_loss.item()
         mean_train_loss = (mean_train_loss * step + train_loss_value) / (step + 1)
-
-        if not math.isfinite(train_loss_value):
-            print(f"loss is {train_loss_value}, training will stop")
-            sys.exit(1)
 
         optimizer_cnn.zero_grad()
         optimizer_bert.zero_grad()
@@ -282,8 +278,13 @@ def train_one_epoch(
             scaler.update()
         else:
             train_loss.backward()
+            if train_loss > loss_clip_tresh:
+                torch.nn.utils.clip_grad_norm(model.parameters(), max_norm=clip_norm)
             optimizer_cnn.step()
             optimizer_bert.step()
+
+        if distributed:
+            torch.distributed.barrier()
 
         end_time = time.time()
         time_iter = end_time - start_time
@@ -353,51 +354,169 @@ def validate(
     logger: TensorboardLogger,
     distributed: bool = True,
     iter_msg: bool = True,
+    eval_mode: str = None,
+    tag_to_idx: Dict = None,
+    category_list: List = None,
+    strcmp_tresh: float = 0,
+    language: str = "eng",
+    seqeval_average: str = "micro",
 ):
+    assert language in [
+        "eng",
+        "chn",
+    ], f"language must be 'eng' or 'chn', f{language} given"
+
+    assert seqeval_average in [
+        "micro",
+        "macro",
+        "weighted",
+        None,
+    ], f"seqeval_average must be 'micro' or 'marco', {seqeval_average} given"
+
+    num_classes = len(category_list)
     num_iter = len(validate_loader)
     start_time = time.time()
-    iter_message = " ".join(["\t", "epoch[{epoch}]", "iter[{iter}]/[{num_iter}]",])
+    iter_message = " ".join(
+        [
+            "\t",
+            "epoch[{epoch}]",
+            "iter[{iter}]/[{num_iter}]",
+        ]
+    )
     log_message = " ".join(
         [
             "\t",
             "epoch[{epoch}]",
             "validate_loss: {val_loss}",
-            "classification_acc: {acc:.4f}%",
             "precision: {precision:.4f}",
             "recall: {recall:.4f}",
             "F1: {F1:.4f}",
             "time used: {time_used:.0f}s",
             "\n",
+            "per_class_F1: {per_class_F1}",
+            "\n",
         ]
     )
 
+    num_gt = 0.0
+    num_det = 0.0
+    method_recall_sum = 0
+    method_precision_sum = 0
+
     model.eval()
-    total_num_correct, total_num_entities = 0.0, 0.0
-    num_precision, num_recall, num_pred_key, num_gt_key = 0.0, 0.0, 0.0, 0.0
+    pred_gt_dict = dict()
     mean_validate_loss = torch.zeros(1).to(device)
     for step, validate_batch in enumerate(validate_loader):
         (
             image_list,
-            class_labels,
-            pos_neg_labels,
+            seg_indices,
+            token_classes,
             ocr_coors,
             ocr_corpus,
             mask,
-            _
+            ocr_text,
+            key_dict,
         ) = validate_batch
 
         image_list = tuple(image.to(device) for image in image_list)
-        class_labels = tuple(class_label.to(device) for class_label in class_labels)
-        pos_neg_labels = tuple(
-            pos_neg_label.to(device) for pos_neg_label in pos_neg_labels
-        )
-        ocr_coors = ocr_coors.to(device)
+        seg_indices = tuple(seg_index.to(device) for seg_index in seg_indices)
+        token_classes = tuple(token_class.to(device) for token_class in token_classes)
+        ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
         ocr_corpus = ocr_corpus.to(device)
         mask = mask.to(device)
 
+        validate_loss: torch.Tensor
+        gt_label: torch.Tensor
+        pred_label: torch.Tensor
         validate_loss, _, _, gt_label, pred_label = model(
-            image_list, class_labels, pos_neg_labels, ocr_coors, ocr_corpus, mask
+            image_list, seg_indices, token_classes, ocr_coors, ocr_corpus, mask
         )
+
+        if distributed:
+            torch.distributed.barrier()
+
+        if eval_mode == "strcmp" or eval_mode == "seq_and_str":
+            pred_all_list = [list() for _ in range(num_classes)]
+            curr_class_str = ""
+            curr_class_score = 0.0
+            curr_class_seg_len = 0
+            prev_class = -1
+            for seg_index in range(pred_label.shape[0]):
+                curr_pred_logits = pred_label[seg_index].softmax(dim=0)
+                curr_pred_class: torch.Tensor = curr_pred_logits.argmax(dim=0)
+                curr_pred_score = curr_pred_logits[curr_pred_class].item()
+                if curr_pred_score < strcmp_tresh:
+                    curr_pred_class = 0
+
+                if curr_pred_class == prev_class:
+                    if language == "eng":
+                        if curr_class_str.endswith("-"):
+                            curr_class_str += ocr_text[0][seg_index]
+                        else:
+                            curr_class_str += " " + ocr_text[0][seg_index]
+                    elif language == "chn":
+                        curr_class_str += ocr_text[0][seg_index]
+                    curr_class_score += curr_pred_score
+                    curr_class_seg_len += 1
+                else:
+                    if prev_class >= 0:
+                        pred_all_list[prev_class].append(
+                            (curr_class_str, (curr_class_score / curr_class_seg_len))
+                        )
+
+                    curr_class_str = ocr_text[0][seg_index]
+                    curr_class_score = curr_pred_score
+                    curr_class_seg_len = 1
+
+                if seg_index == pred_label.shape[0] - 1:
+                    pred_all_list[prev_class].append(
+                        (curr_class_str, (curr_class_score / curr_class_seg_len))
+                    )
+
+                prev_class = curr_pred_class
+
+            pred_key_list = list()
+            for class_all_result in pred_all_list:
+                if class_all_result is None or len(class_all_result) == 0:
+                    pred_key_list.append("")
+                    continue
+
+                max_score = 0
+                max_index = 0
+                for curr_index, candidates in enumerate(class_all_result):
+                    curr_score = candidates[1]
+                    if curr_score > max_score:
+                        max_score = curr_score
+                        max_index = curr_index
+
+                pred_key_list.append(class_all_result[max_index][0])
+
+            recall = 0
+            precision = 0
+            recall_accum = 0.0
+            precision_accum = 0.0
+            curr_num_det = 0.0
+            curr_num_gt = 0.0
+            for class_index in range(num_classes):
+                if class_index == 0:
+                    continue
+                curr_pred_str = pred_key_list[class_index]
+                curr_class_name = category_list[class_index]
+                curr_gt_str = key_dict[0][curr_class_name]
+                if len(curr_pred_str) != 0:
+                    curr_num_det += 1
+                if len(curr_gt_str) != 0:
+                    curr_num_gt += 1
+                    if curr_pred_str == curr_gt_str:
+                        recall_accum += 1
+                        precision_accum += 1
+
+            method_recall_sum += recall_accum
+            method_precision_sum += precision_accum
+            num_gt += curr_num_gt
+            num_det += curr_num_det
+
+        pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
         validate_loss = reduce_loss(validate_loss)
         validate_loss_value = validate_loss.item()
@@ -405,64 +524,121 @@ def validate(
             step + 1
         )
 
-        if distributed:
-            torch.distributed.barrier()
-
-        num_correct, num_entities = SROIE_label_classification_criteria(
-            gt_label=gt_label, pred_label=pred_label
-        )
-
-        (
-            num_precision_,
-            num_recall_,
-            num_pred_key_,
-            num_gt_key_,
-        ) = SROIE_label_F1_criteria(gt_label=gt_label, pred_label=pred_label)
-
-        num_precision += num_precision_
-        num_recall += num_recall_
-        num_pred_key += num_pred_key_
-        num_gt_key += num_gt_key_
-
-        total_num_correct += num_correct
-        total_num_entities += num_entities
-
         if iter_msg:
-            print(iter_message.format(epoch=epoch, iter=step + 1, num_iter=num_iter,))
+            print(
+                iter_message.format(
+                    epoch=epoch + 1,
+                    iter=step + 1,
+                    num_iter=num_iter,
+                )
+            )
 
-    if device != torch.device("cpu"):
+    if device != "cpu":
         torch.cuda.synchronize(device)
 
-    acc = total_num_correct / (total_num_entities + 1e-8)
-    precision = float(0) if (num_precision == 0) else (num_precision / num_pred_key)
-    recall = float(1) if (num_recall == 0) else (num_recall / num_gt_key)
-    F1 = (
-        float(0)
-        if (precision + recall == 0)
-        else (2 * precision * recall) / (precision + recall)
-    )
-
-    time_used = time.time() - start_time
-    print(
-        log_message.format(
-            epoch=(epoch + 1),
-            val_loss=validate_loss_value,
-            acc=acc,
-            precision=precision,
-            recall=recall,
-            F1=F1,
-            time_used=time_used,
+    if eval_mode == "seqeval":
+        assert tag_to_idx is not None
+        precision, recall, F1, report = BIO_F1_criteria(
+            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx, average=seqeval_average
         )
-    )
+        print(report)
+        print(
+            f"\t precision:[{precision:.4f}]  recall:[{recall:.4f}]  tokenF1: [{F1:.4f}]"
+        )
+    elif eval_mode == "strcmp":
+        recall = 0 if num_gt == 0 else method_recall_sum / num_gt
+        precision = 0 if num_det == 0 else method_precision_sum / num_det
+        F1 = (
+            0
+            if recall + precision == 0
+            else 2 * recall * precision / (recall + precision)
+        )
+
+        time_used = time.time() - start_time
+        print(
+            log_message.format(
+                epoch=(epoch + 1),
+                val_loss=validate_loss_value,
+                precision=precision,
+                recall=recall,
+                F1=F1,
+                time_used=time_used,
+                per_class_F1=None,
+            )
+        )
+    elif eval_mode == "seq_and_str":
+        assert tag_to_idx is not None
+        token_precision, token_recall, token_F1, report = BIO_F1_criteria(
+            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx, average=seqeval_average
+        )
+        print("==> token level result")
+        print(report)
+        print(
+            f"\t precision:[{token_precision:.4f}]  recall:[{token_recall:.4f}]  tokenF1: [{token_F1:.4f}]"
+        )
+
+        recall = 0 if num_gt == 0 else method_recall_sum / num_gt
+        precision = 0 if num_det == 0 else method_precision_sum / num_det
+        F1 = (
+            0
+            if recall + precision == 0
+            else 2 * recall * precision / (recall + precision)
+        )
+
+        time_used = time.time() - start_time
+        print("==> entity level result")
+        print(
+            log_message.format(
+                epoch=(epoch + 1),
+                val_loss=validate_loss_value,
+                precision=precision,
+                recall=recall,
+                F1=F1,
+                time_used=time_used,
+                per_class_F1=None,
+            )
+        )
+
+    else:
+        result_dict: Dict
+        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
+        num_classes = result_dict["num_classes"]
+        precision = 0.0
+        recall = 0.0
+        F1 = 0.0
+        per_class_F1 = list()
+        for class_index in range(num_classes):
+            curr_dict: Dict
+            curr_dict = result_dict[class_index]
+            precision += curr_dict["precision"]
+            recall += curr_dict["recall"]
+            F1 += curr_dict["F1"]
+            per_class_F1.append(curr_dict["F1"])
+
+        precision /= num_classes
+        recall /= num_classes
+        F1 /= num_classes
+
+        time_used = time.time() - start_time
+        print(
+            log_message.format(
+                epoch=(epoch + 1),
+                val_loss=validate_loss_value,
+                precision=precision,
+                recall=recall,
+                F1=F1,
+                time_used=time_used,
+                per_class_F1=per_class_F1,
+            )
+        )
 
     if logger is not None:
-        logger.update(head="loss", validate_loss=validate_loss_value, step=epoch)
-        logger.update(head="criteria", label_classification_acc=acc, step=epoch)
-        logger.update(head="criteria", label_precision=precision, step=epoch)
-        logger.update(head="criteria", label_recall=recall, step=epoch)
-        logger.update(head="criteria", label_F1=F1, step=epoch)
+        logger.update(head="loss", validate_loss=validate_loss_value, step=epoch + 1)
+        logger.update(head="criteria", label_precision=precision, step=epoch + 1)
+        logger.update(head="criteria", label_recall=recall, step=epoch + 1)
+        logger.update(head="criteria", label_F1=F1, step=epoch + 1)
 
-    return acc, F1
+    return F1
 
 
 @torch.no_grad()
@@ -479,6 +655,7 @@ def inference_once(
         ocr_corpus,
         mask,
         ocr_text,
+        _,
     ) = batch
 
     assert (
@@ -491,7 +668,7 @@ def inference_once(
     image_list = tuple(image.to(device) for image in image_list)
     class_labels = tuple(class_label.to(device) for class_label in class_labels)
     pos_neg_labels = tuple(pos_neg_label.to(device) for pos_neg_label in pos_neg_labels)
-    ocr_coors = ocr_coors.to(device)
+    ocr_coors = tuple(ocr_coor.to(device) for ocr_coor in ocr_coors)
     ocr_corpus = ocr_corpus.to(device)
     mask = mask.to(device)
 
@@ -519,7 +696,9 @@ def inference_once(
         print(item)
 
     draw_box(
-        image=image_list[0], boxes_dict_list=class_result, class_list=EPHOIE_CLASS_LIST,
+        image=image_list[0],
+        boxes_dict_list=class_result,
+        class_list=EPHOIE_CLASS_LIST,
     )
 
     inference_visualize(

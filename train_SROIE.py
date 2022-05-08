@@ -24,6 +24,28 @@ from pipeline.distributed_utils import (
     save_on_master,
 )
 
+SROIE_CLASS_LIST = ["others", "company", "date", "address", "total"]
+
+TAG_TO_IDX = {
+    "O": 0,
+    "B-company": 1,
+    "B-date": 2,
+    "B-address": 3,
+    "B-total": 4,
+}
+
+TAG_TO_IDX_BIO = {
+    "O": 0,
+    "B-company": 1,
+    "I-company": 2,
+    "B-date": 3,
+    "I-date": 4,
+    "B-address": 5,
+    "I-address": 6,
+    "B-total": 7,
+    "I-total": 8,
+}
+
 
 def train(args):
     init_distributed_mode(args)
@@ -89,19 +111,30 @@ def train(args):
     early_fusion_downsampling_ratio = hyp["early_fusion_downsampling_ratio"]
     roi_shape = hyp["roi_shape"]
     p_fuse_downsampling_ratio = hyp["p_fuse_downsampling_ratio"]
-    roi_align_output_reshape = hyp["roi_align_output_reshape"]
     late_fusion_fuse_embedding_channel = hyp["late_fusion_fuse_embedding_channel"]
     loss_weights = hyp["loss_weights"]
     loss_control_lambda = hyp["loss_control_lambda"]
+    add_pos_neg = hyp["add_pos_neg"]
+    layer_mode = hyp["layer_mode"]
 
-    num_hard_positive_main = hyp["num_hard_positive_main"]
-    num_hard_negative_main = hyp["num_hard_negative_main"]
+    num_hard_positive_main_1 = hyp["num_hard_positive_main_1"]
+    num_hard_negative_main_1 = hyp["num_hard_negative_main_1"]
+    num_hard_positive_main_2 = hyp["num_hard_positive_main_2"]
+    num_hard_negative_main_2 = hyp["num_hard_negative_main_2"]
     loss_aux_sample_list = hyp["loss_aux_sample_list"]
     num_hard_positive_aux = hyp["num_hard_positive_aux"]
     num_hard_negative_aux = hyp["num_hard_negative_aux"]
+    ohem_random = hyp["ohem_random"]
 
-    if loss_aux_sample_list is not None:
-        amp = False                     # CrossEntropyLossRandomSample has conflicts with amp mode
+
+    classifier_mode = hyp["classifier_mode"]
+    eval_mode = hyp["eval_mode"]
+    tag_mode = hyp["tag_mode"]
+
+    if tag_mode == "BIO":
+        map_dict = TAG_TO_IDX_BIO
+    else:
+        map_dict = TAG_TO_IDX
 
     device = torch.device(device)
 
@@ -137,15 +170,21 @@ def train(args):
         early_fusion_downsampling_ratio=early_fusion_downsampling_ratio,
         roi_shape=roi_shape,
         p_fuse_downsampling_ratio=p_fuse_downsampling_ratio,
-        roi_align_output_reshape=roi_align_output_reshape,
         late_fusion_fuse_embedding_channel=late_fusion_fuse_embedding_channel,
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
-        num_hard_positive_main=num_hard_positive_main,
-        num_hard_negative_main=num_hard_negative_main,
+        add_pos_neg=add_pos_neg,
+        num_hard_positive_main_1=num_hard_positive_main_1,
+        num_hard_negative_main_1=num_hard_negative_main_1,
+        num_hard_positive_main_2=num_hard_positive_main_2,
+        num_hard_negative_main_2=num_hard_negative_main_2,
         num_hard_positive_aux=num_hard_positive_aux,
         num_hard_negative_aux=num_hard_negative_aux,
         loss_aux_sample_list=loss_aux_sample_list,
+        classifier_mode=classifier_mode,
+        tag_to_idx=map_dict,
+        ohem_random=ohem_random,
+        layer_mode=layer_mode,
     )
     if sync_bn:
         model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
@@ -182,29 +221,20 @@ def train(args):
         weight_decay=weight_decay_bert,
     )
 
-    # optimizer_bert = torch.optim.SGD(
-    #     params=params_bert,
-    #     lr=learning_rate_bert,
-    #     momentum=momentum_bert,
-    #     weight_decay=weight_decay_bert,
-    # )
-
     scaler = torch.cuda.amp.GradScaler() if amp else None
 
-    lr_schedule_values_cnn = cosine_scheduler(
-        base_value=learning_rate_cnn,
-        final_value=min_learning_rate_cnn,
-        epoches=end_epoch,
-        niter_per_ep=num_training_steps_per_epoch,
-        warmup_epoches=warm_up_epoches_cnn,
-        start_warmup_value=warm_up_init_lr_cnn,
-        warmup_steps=-1,
-    )
-    # lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
-    #     optimizer=optimizer_cnn,
-    #     step_size = 40,
-    #     gamma = 0.1
+    # lr_schedule_values_cnn = cosine_scheduler(
+    #    base_value=learning_rate_cnn,
+    #    final_value=min_learning_rate_cnn,
+    #    epoches=end_epoch,
+    #    niter_per_ep=num_training_steps_per_epoch,
+    #    warmup_epoches=warm_up_epoches_cnn,
+    #    start_warmup_value=warm_up_init_lr_cnn,
+    #    warmup_steps=-1,
     # )
+    lr_schedule_values_cnn = torch.optim.lr_scheduler.StepLR(
+        optimizer=optimizer_cnn, step_size=15, gamma=0.1
+    )
     wd_schedule_values_cnn = cosine_scheduler(
         base_value=weight_decay_cnn,
         final_value=min_weight_decay_cnn,
@@ -212,20 +242,18 @@ def train(args):
         niter_per_ep=num_training_steps_per_epoch,
     )
 
-    lr_schedule_values_bert = cosine_scheduler(
-        base_value=learning_rate_bert,
-        final_value=min_learning_rate_bert,
-        epoches=end_epoch,
-        niter_per_ep=num_training_steps_per_epoch,
-        warmup_epoches=warm_up_epoches_bert,
-        start_warmup_value=warm_up_init_lr_bert,
-        warmup_steps=-1,
-    )
-    # lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
-    #     optimizer=optimizer_bert,
-    #     step_size = 50,
-    #     gamma = 0.1
+    # lr_schedule_values_bert = cosine_scheduler(
+    #    base_value=learning_rate_bert,
+    #    final_value=min_learning_rate_bert,
+    #    epoches=end_epoch,
+    #    niter_per_ep=num_training_steps_per_epoch,
+    #    warmup_epoches=warm_up_epoches_bert,
+    #    start_warmup_value=warm_up_init_lr_bert,
+    #    warmup_steps=-1,
     # )
+    lr_schedule_values_bert = torch.optim.lr_scheduler.StepLR(
+        optimizer=optimizer_bert, step_size=15, gamma=0.1
+    )
     wd_schedule_values_bert = cosine_scheduler(
         base_value=weight_decay_bert,
         final_value=min_weight_decay_bert,
@@ -280,8 +308,19 @@ def train(args):
                 os.path.join(save_log, comment + ".log"), sys.stdout
             )
 
-    top_acc = 0
-    top_F1_tresh = 0.92
+    print(f"==> Initial validation")
+    F1 = validate(
+        model=model,
+        validate_loader=val_loader,
+        device=device,
+        epoch=0,
+        logger=logger,
+        eval_mode=eval_mode,
+        tag_to_idx=map_dict,
+        category_list=SROIE_CLASS_LIST,
+    )
+
+    top_F1_tresh = 0.95
     top_F1 = 0
     print(f"==> start training")
     for epoch in range(start_epoch, end_epoch):
@@ -290,7 +329,7 @@ def train(args):
         if logger is not None:
             logger.set_step(epoch * num_training_steps_per_epoch)
 
-        print(f"==> training epoch {epoch}/{end_epoch - start_epoch}")
+        print(f"==> training epoch {epoch + 1}/{end_epoch - start_epoch}")
         loss = train_one_epoch(
             model=model,
             optimizer_cnn=optimizer_cnn,
@@ -307,29 +346,27 @@ def train(args):
             scaler=scaler,
         )
 
-        print(f"==> validating epoch {epoch}/{end_epoch - start_epoch}")
-        classification_acc, F1 = validate(
+        print(f"==> validating epoch {epoch + 1}/{end_epoch - start_epoch}")
+        F1 = validate(
             model=model,
             validate_loader=val_loader,
             device=device,
             epoch=epoch,
             logger=logger,
+            eval_mode=eval_mode,
+            tag_to_idx=map_dict,
+            category_list=SROIE_CLASS_LIST,
         )
 
         if F1 > top_F1:
             top_F1 = F1
-
-        if classification_acc > top_acc:
-            top_acc = classification_acc
 
         if F1 > top_F1_tresh or (epoch % 400 == 0 and epoch != start_epoch):
             top_F1_tresh = F1
             if save_top is not None:
                 if not os.path.exists(save_top) and is_main_process():
                     os.mkdir(save_top)
-                print(
-                    f"==> top criteria found, saving model |epoch[{epoch}]|F1[{F1}]|acc[{classification_acc}]|"
-                )
+                print(f"==> top criteria found, saving model |epoch[{epoch}]|F1[{F1}]|")
                 save_files = {
                     "model": model.state_dict(),
                     "optimizer_cnn": optimizer_cnn.state_dict(),
@@ -361,7 +398,7 @@ def train(args):
                     os.path.join(
                         save_top,
                         f"bs-{batch_size}_lr1-{learning_rate_cnn}_lr2-{learning_rate_bert}_"
-                        f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_acc-{classification_acc}_time-{curr_time_h}.pth",
+                        f"bb-{backbone}_bertv-{bert_version}_epoch-{epoch}_F1-{F1}_time-{curr_time_h}.pth",
                     ),
                 )
 
@@ -369,7 +406,7 @@ def train(args):
             if logger is not None:
                 logger.flush()
 
-    print(f"top_F1: {top_F1:.4f}  top_acc: {top_acc:.4f}")
+    print(f"top_F1: {top_F1:.4f}")
 
 
 if __name__ == "__main__":

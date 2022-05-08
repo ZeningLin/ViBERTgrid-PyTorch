@@ -1,7 +1,6 @@
 import os
 import json
 
-# import pysnooper
 from tqdm import tqdm
 from typing import Tuple, Optional, Callable
 
@@ -16,14 +15,14 @@ from torch.utils.data import distributed, Dataset, DataLoader, BatchSampler
 from transformers import BertTokenizer
 
 
-class SROIEDataset(Dataset):
-    """Dataset for
+FUNSD_CLASS_INDEX = {"others": 0, "question": 1, "answer": 2, "header": 3}
 
-    The ICDAR 2019 Robust Reading Challenge on Scanned Receipts OCR and Information Extraction,
-    task3: Key Information Extraction
 
-    originally from https://github.com/zzzDavid/ICDAR-2019-SROIE,
-    preprocessed by data_preprocessing.py and data_spilt.py
+class FUNSDDataset(Dataset):
+    """The FUNSD dataset
+
+    MEAN = [0.94802886 0.94802886 0.94802886]
+    STD = [0.18400319 0.18400319 0.18400319]
 
     Parameters
     ----------
@@ -70,7 +69,7 @@ class SROIEDataset(Dataset):
     """
 
     def __init__(
-        self, root: str, train: bool = True, tokenizer: Optional[Callable] = None
+        self, root: str, train: bool, tokenizer: Optional[Callable] = None
     ) -> None:
         super().__init__()
 
@@ -85,29 +84,37 @@ class SROIEDataset(Dataset):
             [torchvision.transforms.ToTensor()]
         )
 
-        dir_img = os.path.join(root, "image")
-        self.filename_list = [f for f in os.listdir(dir_img)]
+        self.filename_list = []
+        if self.train:
+            self.subset_root = os.path.join(root, "training_data")
+            for file in os.listdir(os.path.join(self.subset_root, "_label_csv")):
+                self.filename_list.append(file.replace(".csv", ""))
+        else:
+            self.subset_root = os.path.join(root, "training_data")
+            for file in os.listdir(os.path.join(self.subset_root, "_label_csv")):
+                self.filename_list.append(file.replace(".csv", ""))
 
     def __len__(self) -> int:
         return len(self.filename_list)
 
     def __getitem__(self, index):
-        dir_img = os.path.join(self.root, "image")
-        dir_ocr_result = os.path.join(self.root, "label")
+        dir_img = os.path.join(self.subset_root, "images", (self.filename_list[index] + ".png"))
+        dir_csv_label = os.path.join(
+            self.subset_root, "_label_csv", (self.filename_list[index] + ".csv")
+        )
 
-        file = self.filename_list[index]
-
-        image = Image.open(os.path.join(dir_img, file))
+        image = Image.open(dir_img)
         if len(image.split()) != 3:
             image = image.convert("RGB")
 
-        ocr_csv_file: pd.DataFrame = pd.read_csv(
-            os.path.join(dir_ocr_result, file.replace("jpg", "csv"))
-        )
         ocr_coor = []
         ocr_text = []
         seg_classes = []
-        for index, row in ocr_csv_file.iterrows():
+        csv_label: pd.DataFrame = pd.read_csv(dir_csv_label)
+        for _, row in csv_label.iterrows():
+            if row["text"] == "" or row["text"] == " ":
+                continue
+
             ocr_text.append(str(row["text"]))
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
             seg_classes.append(row["data_class"])
@@ -116,10 +123,8 @@ class SROIEDataset(Dataset):
         seg_indices = []
         ocr_text_filter = []
         for seg_index, text in enumerate(ocr_text):
-            if text == "":
-                continue
             ocr_text_filter.append(text)
-            curr_tokens = self.tokenizer.tokenize(text.lower())
+            curr_tokens = self.tokenizer.tokenize(text)
             for i in range(len(curr_tokens)):
                 ocr_tokens.append(curr_tokens[i])
                 seg_indices.append(seg_index)
@@ -135,11 +140,6 @@ class SROIEDataset(Dataset):
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
-            dir_key = os.path.join(self.root, "key", file.replace(".jpg", ".json"))
-            with open(dir_key, "r") as key_f:
-                key_dict = json.load(key_f)
-                key_dict.update({"filename": file.replace(".jpg", "")})
-
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
@@ -147,7 +147,6 @@ class SROIEDataset(Dataset):
                 torch.tensor(ocr_coor, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
-                key_dict,
             )
 
     def _ViBERTgrid_coll_func(self, samples):
@@ -157,7 +156,6 @@ class SROIEDataset(Dataset):
         ocr_coors = []
         ocr_corpus = []
         ocr_text = []
-        key_dict_list = []
         for item in samples:
             imgs.append(item[0])
             seg_indices.append(item[1])
@@ -166,7 +164,6 @@ class SROIEDataset(Dataset):
             ocr_corpus.append(item[4])
             if self.train == False:
                 ocr_text.append(item[5])
-                key_dict_list.append(item[6])
 
         # pad sequence to generate mini-batch
         ocr_corpus = pad_sequence(ocr_corpus, batch_first=True)
@@ -192,7 +189,7 @@ class SROIEDataset(Dataset):
                 ocr_corpus,
                 mask.int(),
                 tuple(ocr_text),
-                tuple(key_dict_list),
+                None,
             )
 
 
@@ -203,7 +200,7 @@ def load_train_dataset(
     tokenizer: Optional[Callable] = None,
     return_mean_std: bool = False,
 ) -> Tuple[DataLoader]:
-    """load SROIE train dataset
+    """load FUNSD train dataset
 
     Parameters
     ----------
@@ -226,26 +223,24 @@ def load_train_dataset(
     image_std : numpy.ndarray
 
     """
-    dir_train = os.path.join(root, "train")
-    dir_val = os.path.join(root, "test")
 
-    SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
+    FUNSD_train_dataset = FUNSDDataset(root=root, train=True, tokenizer=tokenizer)
+    FUNSD_val_dataset = FUNSDDataset(root=root, train=False, tokenizer=tokenizer)
 
     train_loader = DataLoader(
-        SROIE_train_dataset,
+        FUNSD_train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=SROIE_train_dataset._ViBERTgrid_coll_func,
+        collate_fn=FUNSD_train_dataset._ViBERTgrid_coll_func,
     )
 
     val_loader = DataLoader(
-        SROIE_val_dataset,
+        FUNSD_val_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func,
+        collate_fn=FUNSD_val_dataset._ViBERTgrid_coll_func,
     )
 
     if return_mean_std:
@@ -260,8 +255,8 @@ def load_train_dataset(
                 for d in range(3):
                     image_mean[d] += curr_img[d, :, :].mean()
                     image_std[d] += curr_img[d, :, :].std()
-        image_mean.div_(len(SROIE_train_dataset))
-        image_std.div_(len(SROIE_train_dataset))
+        image_mean.div_(len(FUNSD_train_dataset))
+        image_std.div_(len(FUNSD_train_dataset))
 
         return train_loader, val_loader, image_mean.numpy(), image_std.numpy()
 
@@ -274,7 +269,7 @@ def load_train_dataset_multi_gpu(
     num_workers: int = 0,
     tokenizer: Optional[Callable] = None,
 ) -> Tuple[DataLoader]:
-    """load SROIE train dataset in multi-gpu scene
+    """load FUNSD train dataset in multi-gpu scene
 
     Parameters
     ----------
@@ -293,31 +288,29 @@ def load_train_dataset_multi_gpu(
     val_loader : DataLoader
 
     """
-    dir_train = os.path.join(root, "train")
-    dir_val = os.path.join(root, "test")
 
-    SROIE_train_dataset = SROIEDataset(dir_train, train=True, tokenizer=tokenizer)
-    SROIE_val_dataset = SROIEDataset(dir_val, train=False, tokenizer=tokenizer)
+    FUNSD_train_dataset = FUNSDDataset(root, train=True, tokenizer=tokenizer)
+    FUNSD_val_dataset = FUNSDDataset(root, train=False, tokenizer=tokenizer)
 
-    train_sampler = distributed.DistributedSampler(SROIE_train_dataset)
-    val_sampler = distributed.DistributedSampler(SROIE_val_dataset)
+    train_sampler = distributed.DistributedSampler(FUNSD_train_dataset)
+    val_sampler = distributed.DistributedSampler(FUNSD_val_dataset)
 
     train_batch_sampler = BatchSampler(
         train_sampler, batch_size=batch_size, drop_last=True
     )
 
     train_loader = DataLoader(
-        SROIE_train_dataset,
+        FUNSD_train_dataset,
         batch_sampler=train_batch_sampler,
         num_workers=num_workers,
-        collate_fn=SROIE_train_dataset._ViBERTgrid_coll_func,
+        collate_fn=FUNSD_train_dataset._ViBERTgrid_coll_func,
     )
 
     val_loader = DataLoader(
-        SROIE_val_dataset,
+        FUNSD_val_dataset,
         sampler=val_sampler,
         num_workers=num_workers,
-        collate_fn=SROIE_val_dataset._ViBERTgrid_coll_func,
+        collate_fn=FUNSD_val_dataset._ViBERTgrid_coll_func,
     )
 
     return train_loader, val_loader, train_sampler
@@ -328,13 +321,13 @@ def load_test_data(
     num_workers: int = 0,
     tokenizer: Optional[Callable] = None,
 ):
-    SROIE_test_dataset = SROIEDataset(root=root, train=False, tokenizer=tokenizer)
+    FUNSD_test_dataset = FUNSDDataset(root=root, train=False, tokenizer=tokenizer)
     test_loader = DataLoader(
-        SROIE_test_dataset,
+        FUNSD_test_dataset,
         batch_size=1,
         num_workers=num_workers,
-        collate_fn=SROIE_test_dataset._ViBERTgrid_coll_func,
-        shuffle=False,
+        collate_fn=FUNSD_test_dataset._ViBERTgrid_coll_func,
+        shuffle=True,
     )
 
     return test_loader
@@ -345,13 +338,15 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--root")
+    parser.add_argument("--model")
     args = parser.parse_args()
 
     dir_processed = args.root
-    model_version = "bert-base-uncased"
+    model_version = args.model
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     train_loader, val_loader, image_mean, image_std = load_train_dataset(
+    # train_loader, val_loader = load_train_dataset(
         dir_processed,
         batch_size=4,
         num_workers=0,
@@ -361,9 +356,6 @@ if __name__ == "__main__":
 
     print(image_mean, image_std)
 
-    for train_batch in tqdm(train_loader):
-        img, seg_indices, token_class, coor, corpus, mask = train_batch
-        for item in coor:
-            if len(item) == 0:
-                print("empty item found")
-                print(item)
+    # for train_batch in tqdm(train_loader):
+    #     img, class_label, pos_neg, coor, corpus, mask = train_batch
+    #     print("TEST")

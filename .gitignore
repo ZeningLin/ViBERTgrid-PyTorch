@@ -1,6 +1,7 @@
 __pycache__/
 
 .vscode/
+.VSCodeCounter/
 .idea/
 temp/
 runs/
@@ -8,6 +9,7 @@ weights/
 config/
 log/
 traced/
+result/
 
 private_*
 private/
