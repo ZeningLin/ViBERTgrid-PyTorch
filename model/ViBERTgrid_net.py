@@ -8,6 +8,7 @@ from transformers import (
     RobertaTokenizer,
     RobertaModel,
     RobertaConfig,
+    AutoConfig,
 )
 
 from typing import Tuple, List, Any, Dict
@@ -263,7 +264,7 @@ class ViBERTgridNet(nn.Module):
                     raise ValueError(
                         "invalid value of parameter tokenizer, must be None or callable BertTokenizer"
                     )
-                self.bert_config = BertConfig()
+                self.bert_config = AutoConfig.from_pretrained(bert_model)
                 self.bert_model = BertModel(self.bert_config)
             elif "roberta-" in bert_model:
                 if tokenizer is None:
@@ -274,7 +275,7 @@ class ViBERTgridNet(nn.Module):
                     raise ValueError(
                         "invalid value of parameter tokenizer, must be None or callable RobertaTokenizer"
                     )
-                self.bert_config = RobertaConfig()
+                self.bert_config = AutoConfig.from_pretrained(bert_model)
                 self.bert_model = RobertaModel(self.bert_config)
 
         # backbone stuff

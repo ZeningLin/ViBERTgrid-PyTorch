@@ -11,7 +11,7 @@ import torch
 import torch.distributed
 import torch.backends.cudnn
 
-from pipeline.distributed_utils import reduce_loss, get_world_size
+from pipeline.distributed_utils import reduce_loss, get_world_size, get_rank
 from pipeline.criteria import (
     token_classification_criteria,
     token_F1_criteria,
@@ -310,7 +310,7 @@ def train_one_epoch(
                 )
             )
 
-        if logger is not None:
+        if logger is not None and get_rank() == 0:
             index: int
             if iter_ >= len(weight_decay_scheduler_cnn):
                 index = -1
@@ -373,6 +373,7 @@ def validate(
         None,
     ], f"seqeval_average must be 'micro' or 'marco', {seqeval_average} given"
 
+    num_proc = get_world_size()
     num_classes = len(category_list)
     num_iter = len(validate_loader)
     start_time = time.time()
@@ -398,10 +399,10 @@ def validate(
         ]
     )
 
-    num_gt = 0.0
-    num_det = 0.0
-    method_recall_sum = 0
-    method_precision_sum = 0
+    num_gt = torch.zeros(1, device=device)
+    num_det = torch.zeros(1, device=device)
+    method_recall_sum = torch.zeros(1, device=device)
+    method_precision_sum = torch.zeros(1, device=device)
 
     model.eval()
     pred_gt_dict = dict()
@@ -511,10 +512,10 @@ def validate(
                         recall_accum += 1
                         precision_accum += 1
 
-            method_recall_sum += recall_accum
-            method_precision_sum += precision_accum
-            num_gt += curr_num_gt
-            num_det += curr_num_det
+            method_recall_sum += torch.tensor(recall_accum, device=device)
+            method_precision_sum += torch.tensor(precision_accum, device=device)
+            num_gt += torch.tensor(curr_num_gt, device=device)
+            num_det += torch.tensor(curr_num_det, device=device)
 
         pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
 
@@ -533,13 +534,31 @@ def validate(
                 )
             )
 
-    if device != "cpu":
+    if device != "cpu" and num_proc != 1:
         torch.cuda.synchronize(device)
+        torch.distributed.all_reduce(num_gt)
+        torch.distributed.all_reduce(num_det)
+        torch.distributed.all_reduce(method_precision_sum)
+        torch.distributed.all_reduce(method_recall_sum)
+
+        pred_gt_dict_syn = [None for _ in range(num_proc)]
+        torch.distributed.all_gather_object(
+            object_list=pred_gt_dict_syn, obj=pred_gt_dict
+        )
+        pred_gt_dict_ = dict()
+        for p_g_d in pred_gt_dict_syn:
+            for k, v in p_g_d.items():
+                pred_gt_dict_.update({k: v})
+
+    num_gt = int(num_gt.item())
+    num_det = int(num_det.item())
+    method_precision_sum = int(method_precision_sum.item())
+    method_recall_sum = int(method_recall_sum.item())
 
     if eval_mode == "seqeval":
         assert tag_to_idx is not None
         precision, recall, F1, report = BIO_F1_criteria(
-            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx, average=seqeval_average
+            pred_gt_dict=pred_gt_dict_, tag_to_idx=tag_to_idx, average=seqeval_average
         )
         print(report)
         print(
@@ -569,7 +588,7 @@ def validate(
     elif eval_mode == "seq_and_str":
         assert tag_to_idx is not None
         token_precision, token_recall, token_F1, report = BIO_F1_criteria(
-            pred_gt_dict=pred_gt_dict, tag_to_idx=tag_to_idx, average=seqeval_average
+            pred_gt_dict=pred_gt_dict_, tag_to_idx=tag_to_idx, average=seqeval_average
         )
         print("==> token level result")
         print(report)
@@ -601,7 +620,7 @@ def validate(
 
     else:
         result_dict: Dict
-        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict)
+        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict_)
         num_classes = result_dict["num_classes"]
         precision = 0.0
         recall = 0.0
