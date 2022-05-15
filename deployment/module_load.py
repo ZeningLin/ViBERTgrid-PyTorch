@@ -75,8 +75,9 @@ def inference_init(
 
     if weights != "":
         print("[LOADING] pretrained weights")
-        checkpoint = torch.load(weights, map_location="cpu")
-        model.load_state_dict(checkpoint, strict=False)
+        checkpoint = torch.load(weights, map_location="cpu")["model"]
+        model_weights = {k.replace("module.", ""): v for k, v in checkpoint.items()}
+        model.load_state_dict(model_weights, strict=False)
         print(f"[LOADED] pretrained weights")
     else:
         raise ValueError("weights must be provided")
