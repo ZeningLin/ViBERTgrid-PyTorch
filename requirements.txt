@@ -7,8 +7,8 @@ PyYAML
 requests
 scikit_learn
 scipy
-seqeval.2
+seqeval
 torch
-torchvision.12.0
+torchvision
 tqdm
 transformers
