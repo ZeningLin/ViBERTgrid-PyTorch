@@ -12,3 +12,4 @@ torch
 torchvision
 tqdm
 transformers
+flask
