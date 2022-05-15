@@ -10,7 +10,7 @@ from model.ViBERTgrid_net import ViBERTgridNet
 
 
 def inference_init(
-    dir_config: str = "./deployment/config/network_config.yaml", data: str = "SROIE"
+    dir_config: str = "./deployment/config/network_config.yaml"
 ):
     with open(dir_config, "r") as c:
         hyp = yaml.load(c, Loader=yaml.FullLoader)
@@ -73,13 +73,13 @@ def inference_init(
         k = k + l
     print("total number of parameters: " + str(k))
 
-    # if weights != "":
-    #     print("[LOADING] pretrained weights")
-    #     checkpoint = torch.load(weights, map_location="cpu")
-    #     model.load_state_dict(checkpoint, strict=False)
-    #     print(f"[LOADED] pretrained weights")
-    # else:
-    #     raise ValueError("weights must be provided")
+    if weights != "":
+        print("[LOADING] pretrained weights")
+        checkpoint = torch.load(weights, map_location="cpu")
+        model.load_state_dict(checkpoint, strict=False)
+        print(f"[LOADED] pretrained weights")
+    else:
+        raise ValueError("weights must be provided")
 
     model = model.to(device)
     print(f"[LOADED] model {backbone} | {bert_version}")
