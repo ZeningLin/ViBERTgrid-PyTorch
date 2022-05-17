@@ -398,7 +398,6 @@ def main(args):
         classifier_mode=classifier_mode,
         ohem_random=True,
         layer_mode=layer_mode,
-        train=False,
         work_mode="eval",
     )
     model = model.to(device)

@@ -158,13 +158,19 @@ def generate_batch(
 
     ocr_tokens = []
     seg_indices = []
-    for seg_index, text in enumerate(return_text_list):
+    return_text_list_ = []
+    return_coor_list_ = []
+    seg_index = 0
+    for text, coor in zip(return_text_list, return_coor_list):
         if text == "":
             continue
+        return_text_list_.append(text)
+        return_coor_list_.append(coor)
         curr_tokens = tokenizer.tokenize(text)
         for i in range(len(curr_tokens)):
             ocr_tokens.append(curr_tokens[i])
             seg_indices.append(seg_index)
+        seg_index += 1
 
     ocr_corpus = tokenizer.convert_tokens_to_ids(ocr_tokens)
     ocr_corpus = torch.tensor(ocr_corpus, dtype=torch.long, device=device)
@@ -173,8 +179,8 @@ def generate_batch(
     return (
         (image.to(device),),
         (torch.tensor(seg_indices, dtype=torch.int),),
-        (torch.tensor(return_coor_list, dtype=torch.long, device=device),),
+        (torch.tensor(return_coor_list_, dtype=torch.long, device=device),),
         ocr_corpus.unsqueeze(0),
         mask.unsqueeze(0),
-        (return_text_list,),
+        (return_text_list_,),
     )

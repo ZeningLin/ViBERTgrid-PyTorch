@@ -49,7 +49,8 @@ num_hard_positive_aux: 256      # number of hard positive samples in semantic se
 num_hard_negative_aux: 256      # number of hard negative samples in semantic segmentation head loss 2
 ohem_random: True               # apply random sampling before OHEM or not
 
-# model structure config
+
+######################################### model structure config #######################################
 classifier_mode: "simp"                   # classifier mode, "simp", "full" or "crf"
 eval_mode: "seq_and_str"                  # type of evaluation tool, 
                                           # "seqeval" uses seqeval package, calculates token-level result, works for all tag mode
@@ -70,6 +71,7 @@ late_fusion_fuse_embedding_channel: 1024  # [does not need to change]
 layer_mode: "single"                      # type of classifier, single for single layer perceptron, multi for MLP
 loss_control_lambda: 1                    # set 0 to discard the auxiliary semantic segmentation head
 add_pos_neg: True                         # use an additional positive-negative classifier in the simp mode
+
 
 ############################################# saving stuff #############################################
 save_top: "./weights/"                    # dir to save weights of top performance models

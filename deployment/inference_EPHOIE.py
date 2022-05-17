@@ -163,7 +163,7 @@ if __name__ == "__main__":
         DEVICE,
         NUM_CLASSES,
         PARSE_MODE,
-    ) = inference_init(dir_config=args.config, data="EPHOIE")
+    ) = inference_init(dir_config=args.config)
 
     result = inference_pipe(
         MODEL,

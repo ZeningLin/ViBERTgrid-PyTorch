@@ -229,7 +229,7 @@ class BCELossRandomSample(nn.BCELoss):
         assert len(input.shape) == 1 or (
             len(input.shape) == 2 and input.shape[1] == 1
         ), f"invalid shape"
-        if len(input.shape) == 1:
+        if len(input.shape) == 2:
             input = input.squeeze(1)
 
         if self.sample_list is None:
