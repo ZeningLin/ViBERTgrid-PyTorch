@@ -162,11 +162,13 @@ def generate_batch(
     return_coor_list_ = []
     seg_index = 0
     for text, coor in zip(return_text_list, return_coor_list):
-        if text == "":
+        if text == "" or text.isspace():
+            continue
+        curr_tokens = tokenizer.tokenize(text)
+        if len(curr_tokens) == 0:
             continue
         return_text_list_.append(text)
         return_coor_list_.append(coor)
-        curr_tokens = tokenizer.tokenize(text)
         for i in range(len(curr_tokens)):
             ocr_tokens.append(curr_tokens[i])
             seg_indices.append(seg_index)

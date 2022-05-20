@@ -98,7 +98,9 @@ class FUNSDDataset(Dataset):
         return len(self.filename_list)
 
     def __getitem__(self, index):
-        dir_img = os.path.join(self.subset_root, "images", (self.filename_list[index] + ".png"))
+        dir_img = os.path.join(
+            self.subset_root, "images", (self.filename_list[index] + ".png")
+        )
         dir_csv_label = os.path.join(
             self.subset_root, "_label_csv", (self.filename_list[index] + ".csv")
         )
@@ -121,13 +123,23 @@ class FUNSDDataset(Dataset):
 
         ocr_tokens = []
         seg_indices = []
+        ocr_coor_ = []
+        seg_classes_ = []
         ocr_text_filter = []
-        for seg_index, text in enumerate(ocr_text):
-            ocr_text_filter.append(text)
+        seg_index = 0
+        for text in ocr_text:
+            if len(text) == 0 or text.isspace():
+                continue
             curr_tokens = self.tokenizer.tokenize(text)
+            if len(curr_tokens) == 0:
+                continue
+            ocr_text_filter.append(text)
+            ocr_coor_.append(ocr_coor[seg_index])
+            seg_classes_.append(seg_classes[seg_index])
             for i in range(len(curr_tokens)):
                 ocr_tokens.append(curr_tokens[i])
                 seg_indices.append(seg_index)
+            seg_index += 1
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
@@ -135,8 +147,8 @@ class FUNSDDataset(Dataset):
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
-                torch.tensor(seg_classes, dtype=torch.int),
-                torch.tensor(ocr_coor, dtype=torch.long),
+                torch.tensor(seg_classes_, dtype=torch.int),
+                torch.tensor(ocr_coor_, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
@@ -346,7 +358,7 @@ if __name__ == "__main__":
     print("loading bert pretrained")
     tokenizer = BertTokenizer.from_pretrained(model_version)
     train_loader, val_loader, image_mean, image_std = load_train_dataset(
-    # train_loader, val_loader = load_train_dataset(
+        # train_loader, val_loader = load_train_dataset(
         dir_processed,
         batch_size=4,
         num_workers=0,
