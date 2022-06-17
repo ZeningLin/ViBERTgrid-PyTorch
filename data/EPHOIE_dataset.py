@@ -135,20 +135,30 @@ class EPHOIEDataset(Dataset):
 
             if row["text"] == "" or row["text"] == " ":
                 continue
-            
+
             ocr_text.append(row["text"])
             ocr_coor.append([row["left"], row["top"], row["right"], row["bot"]])
             seg_classes.append(row["data_class"])
 
         ocr_tokens = []
         seg_indices = []
+        ocr_coor_ = []
+        seg_classes_ = []
         ocr_text_filter = []
-        for seg_index, text in enumerate(ocr_text):
-            ocr_text_filter.append(text)
+        seg_index = 0
+        for text in ocr_text:
+            if len(text) == 0 or text.isspace():
+                continue
             curr_tokens = self.tokenizer.tokenize(text)
+            if len(curr_tokens) == 0:
+                continue
+            ocr_text_filter.append(text)
+            ocr_coor_.append(ocr_coor[seg_index])
+            seg_classes_.append(seg_classes[seg_index])
             for i in range(len(curr_tokens)):
                 ocr_tokens.append(curr_tokens[i])
                 seg_indices.append(seg_index)
+            seg_index += 1
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
@@ -156,8 +166,8 @@ class EPHOIEDataset(Dataset):
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
-                torch.tensor(seg_classes, dtype=torch.int),
-                torch.tensor(ocr_coor, dtype=torch.long),
+                torch.tensor(seg_classes_, dtype=torch.int),
+                torch.tensor(ocr_coor_, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
@@ -370,6 +380,7 @@ def load_test_data(
 
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--root")
     parser.add_argument("--model")

@@ -2,6 +2,7 @@ import os
 import re
 import json
 import tqdm
+import argparse
 import multiprocessing
 
 import math
@@ -106,7 +107,7 @@ def ground_truth_extraction(
     dir_img: str
         directory to the image file
     dir_bbox: str
-        directory to the bbox csv file
+        directory to the bbox txt file
     dir_key: str,
         directory to the key info json file
     data_classes: List,
@@ -313,7 +314,7 @@ def data_preprocessing_pipeline(
     dir_data_img : str
         directory of data image
     dir_data_bbox : str
-        directory of ground-turth bbox csv files
+        directory of ground-turth bbox txt files
     dir_data_key : str
         directory of key information json files
     dir_ocr_result : str
@@ -332,8 +333,8 @@ def data_preprocessing_pipeline(
     num_classes = len(data_classes) + 1
     for file in tqdm.tqdm(file_list):
         dir_image = os.path.join(dir_data_img, file)
-        dir_bbox = os.path.join(dir_data_bbox, file.replace("jpg", "csv"))
-        dir_key = os.path.join(dir_data_key, file.replace("jpg", "json"))
+        dir_bbox = os.path.join(dir_data_bbox, file.replace("jpg", "txt"))
+        dir_key = os.path.join(dir_data_key, file.replace("jpg", "txt"))
         dir_ocr_result_ = os.path.join(dir_ocr_result, file.replace("jpg", "csv"))
 
         gt_dataframe, img_shape = ground_truth_extraction(
@@ -489,10 +490,30 @@ def data_parser_multiprocessing(
 
 
 if __name__ == "__main__":
+    """
+    ___train_raw
+      |___img: images
+      |___box: txt files that contain OCR results
+      |___key: txt files that contain key info labels
+    
+    ___test_raw
+      |___img: images
+      |___box: txt files that contain OCR results
+      |___key: txt files that contain key info labels
+
+    """
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--train_raw", type=str, help="dir to train raw data root")
+    parser.add_argument("--train_processed", type=str, help="dir to train processed")
+    parser.add_argument("--test_raw", type=str, help="dir to test raw data root")
+    parser.add_argument("--test_processed", type=str, help="dir to test processed")
+    args = parser.parse_args()
+
     data_classes = ["company", "date", "address", "total"]
 
-    dir_train_root = r"dir_to_root\ICDAR-SROIE\train_raw"
-    dir_processed = r"dir_to_root\ICDAR-SROIE\train"
+    dir_train_root = args.train_raw
+    dir_processed = args.train_processed
 
     if not os.path.exists(dir_processed):
         os.mkdir(dir_processed)
@@ -504,8 +525,8 @@ if __name__ == "__main__":
         target_shape=None,
     )
 
-    dir_test_root = r"dir_to_root\ICDAR-SROIE\test_raw"
-    dir_processed = r"dir_to_root\ICDAR-SROIE\test"
+    dir_test_root = args.test_raw
+    dir_processed = args.test_processed
 
     if not os.path.exists(dir_processed):
         os.mkdir(dir_processed)

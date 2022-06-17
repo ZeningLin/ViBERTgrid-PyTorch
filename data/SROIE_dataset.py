@@ -114,15 +114,23 @@ class SROIEDataset(Dataset):
 
         ocr_tokens = []
         seg_indices = []
+        ocr_coor_ = []
+        seg_classes_ = []
         ocr_text_filter = []
-        for seg_index, text in enumerate(ocr_text):
-            if text == "":
+        seg_index = 0
+        for text in ocr_text:
+            if text == "" or text.isspace:
+                continue
+            curr_tokens = self.tokenizer.tokenize(text.lower())
+            if len(curr_tokens) == 0:
                 continue
             ocr_text_filter.append(text)
-            curr_tokens = self.tokenizer.tokenize(text.lower())
+            ocr_coor_.append(ocr_coor[seg_index])
+            seg_classes_.append(seg_classes[seg_index])
             for i in range(len(curr_tokens)):
                 ocr_tokens.append(curr_tokens[i])
                 seg_indices.append(seg_index)
+            seg_index += 1
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
@@ -130,8 +138,8 @@ class SROIEDataset(Dataset):
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
-                torch.tensor(seg_classes, dtype=torch.int),
-                torch.tensor(ocr_coor, dtype=torch.long),
+                torch.tensor(seg_classes_, dtype=torch.int),
+                torch.tensor(ocr_coor_, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
             )
         else:
