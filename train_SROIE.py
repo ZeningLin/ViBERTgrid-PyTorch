@@ -361,7 +361,7 @@ def train(args):
         if F1 > top_F1:
             top_F1 = F1
 
-        if F1 > top_F1_tresh or (epoch % 400 == 0 and epoch != start_epoch):
+        if F1 > top_F1_tresh or (epoch % 10 == 0 and epoch != start_epoch):
             top_F1_tresh = F1
             if save_top is not None:
                 if not os.path.exists(save_top) and is_main_process():
