@@ -405,7 +405,7 @@ def validate(
     method_precision_sum = torch.zeros(1, device=device)
 
     model.eval()
-    pred_gt_dict = dict()
+    pred_gt_list = list()
     mean_validate_loss = torch.zeros(1).to(device)
     for step, validate_batch in enumerate(validate_loader):
         (
@@ -517,7 +517,7 @@ def validate(
             num_gt += torch.tensor(curr_num_gt, device=device)
             num_det += torch.tensor(curr_num_det, device=device)
 
-        pred_gt_dict.update({pred_label.detach(): gt_label.detach()})
+        pred_gt_list.append((pred_label.detach(), gt_label.detach()))
 
         validate_loss = reduce_loss(validate_loss)
         validate_loss_value = validate_loss.item()
@@ -541,14 +541,19 @@ def validate(
         torch.distributed.all_reduce(method_precision_sum)
         torch.distributed.all_reduce(method_recall_sum)
 
-        pred_gt_dict_syn = [None for _ in range(num_proc)]
+        pred_gt_list_syn = [None for _ in range(num_proc)]
         torch.distributed.all_gather_object(
-            object_list=pred_gt_dict_syn, obj=pred_gt_dict
+            object_list=pred_gt_list_syn, obj=pred_gt_list
         )
-        pred_gt_dict_ = dict()
-        for p_g_d in pred_gt_dict_syn:
-            for k, v in p_g_d.items():
-                pred_gt_dict_.update({k: v})
+        pred_gt_list_ = list()
+        for p_g_d in pred_gt_list_syn:
+            for p_g_item in p_g_d:
+                pred_gt_list_.append(p_g_item)
+        del pred_gt_list_syn
+    else:
+        pred_gt_list_ = pred_gt_list
+        
+    del pred_gt_list
 
     num_gt = int(num_gt.item())
     num_det = int(num_det.item())
@@ -558,7 +563,7 @@ def validate(
     if eval_mode == "seqeval":
         assert tag_to_idx is not None
         precision, recall, F1, report = BIO_F1_criteria(
-            pred_gt_dict=pred_gt_dict_, tag_to_idx=tag_to_idx, average=seqeval_average
+            pred_gt_list=pred_gt_list_, tag_to_idx=tag_to_idx, average=seqeval_average
         )
         print(report)
         print(
@@ -588,7 +593,7 @@ def validate(
     elif eval_mode == "seq_and_str":
         assert tag_to_idx is not None
         token_precision, token_recall, token_F1, report = BIO_F1_criteria(
-            pred_gt_dict=pred_gt_dict_, tag_to_idx=tag_to_idx, average=seqeval_average
+            pred_gt_list=pred_gt_list_, tag_to_idx=tag_to_idx, average=seqeval_average
         )
         print("==> token level result")
         print(report)
@@ -620,7 +625,7 @@ def validate(
 
     else:
         result_dict: Dict
-        result_dict = token_F1_criteria(pred_gt_dict=pred_gt_dict_)
+        result_dict = token_F1_criteria(pred_gt_list=pred_gt_list_)
         num_classes = result_dict["num_classes"]
         precision = 0.0
         recall = 0.0
