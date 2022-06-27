@@ -119,7 +119,7 @@ class SROIEDataset(Dataset):
         ocr_text_filter = []
         seg_index = 0
         for text in ocr_text:
-            if text == "" or text.isspace:
+            if text == "" or text.isspace():
                 continue
             curr_tokens = self.tokenizer.tokenize(text.lower())
             if len(curr_tokens) == 0:
