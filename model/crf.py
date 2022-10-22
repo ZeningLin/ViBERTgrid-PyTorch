@@ -21,6 +21,7 @@ def argmax(vec):
     _, idx = torch.max(vec, 1)
     return idx.item()
 
+
 # Compute log sum exp in a numerically stable way for the forward algorithm
 def log_sum_exp(vec):
     max_score = vec[0, argmax(vec)]
@@ -42,7 +43,6 @@ class CRF(nn.Module):
         # to the start tag and we never transfer from the stop tag
         self.transitions.data[tag_to_ix[START_TAG], :] = -10000
         self.transitions.data[:, tag_to_ix[STOP_TAG]] = -10000
-
 
     def _forward_alg(self, feats):
         device = self.transitions.device
@@ -81,7 +81,12 @@ class CRF(nn.Module):
         # Gives the score of a provided tag sequence
         score = torch.zeros(1, device=device)
         tags = torch.cat(
-            [torch.tensor([self.tag_to_ix[START_TAG]], dtype=torch.long, device=device), tags]
+            [
+                torch.tensor(
+                    [self.tag_to_ix[START_TAG]], dtype=torch.long, device=device
+                ),
+                tags,
+            ]
         )
         for i, feat in enumerate(feats):
             score = score + self.transitions[tags[i + 1], tags[i]] + feat[tags[i + 1]]
@@ -94,7 +99,9 @@ class CRF(nn.Module):
         backpointers = []
 
         # Initialize the viterbi variables in log space
-        init_vvars = torch.full((1, self.tagset_size), -10000.0, device=self.transitions.device)
+        init_vvars = torch.full(
+            (1, self.tagset_size), -10000.0, device=self.transitions.device
+        )
         init_vvars[0][self.tag_to_ix[START_TAG]] = 0
 
         # forward_var at step i holds the viterbi variables for step i-1
@@ -148,4 +155,3 @@ class CRF(nn.Module):
         # Find the best path, given the features.
         score, tag_seq = self._viterbi_decode(feats)
         return score, tag_seq
-

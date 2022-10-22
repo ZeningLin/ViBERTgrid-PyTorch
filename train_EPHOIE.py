@@ -8,7 +8,8 @@ import numpy as np
 import torch
 from transformers import BertTokenizer, RobertaTokenizer
 
-from data.EPHOIE_dataset import load_train_dataset_multi_gpu as EPHOIE_load_train
+from data.EPHOIE_dataset import load_train_dataset_multi_gpu as EPHOIE_load_train_multi
+from data.EPHOIE_dataset import load_train_dataset as EPHOIE_load_train
 from model.ViBERTgrid_net import ViBERTgridNet
 from pipeline.train_val_utils import (
     train_one_epoch,
@@ -155,6 +156,11 @@ def train(args):
     eval_mode = hyp["eval_mode"]
     tag_mode = hyp["tag_mode"]
 
+    if classifier_mode == "crf":
+        assert (
+            eval_mode == "seqeval"
+        ), "When using the crf classifier, only the seqeval metric is available"
+
     if tag_mode == "BIO":
         map_dict = TAG_TO_IDX_BIO
     else:
@@ -170,12 +176,21 @@ def train(args):
     print(f"==> tokenizer {bert_version} loaded")
 
     print(f"==> loading datasets")
-    train_loader, val_loader, train_sampler = EPHOIE_load_train(
-        root=data_root,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        tokenizer=tokenizer,
-    )
+    if args.distributed:
+        train_loader, val_loader, train_sampler = EPHOIE_load_train_multi(
+            root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            tokenizer=tokenizer,
+        )
+    else:
+        train_loader, val_loader = EPHOIE_load_train(
+            root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            tokenizer=tokenizer,
+        )
+
     print(f"==> dataset loaded")
 
     print(f"==> creating model {backbone} | {bert_version}")
@@ -296,7 +311,7 @@ def train(args):
             f"{curr_time.tm_year:04d}-{curr_time.tm_mon:02d}-{curr_time.tm_mday:02d}"
         )
         curr_time_h += (
-            f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
+            f"_{curr_time.tm_hour:02d}-{curr_time.tm_min:02d}-{curr_time.tm_sec:02d}"
         )
         comment = (
             comment_exp
@@ -321,6 +336,7 @@ def train(args):
         device=device,
         epoch=0,
         logger=logger,
+        distributed=args.distributed,
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
         category_list=EPHOIE_CLASS_LIST,
@@ -361,6 +377,7 @@ def train(args):
             device=device,
             epoch=epoch,
             logger=logger,
+            distributed=args.distributed,
             eval_mode=eval_mode,
             tag_to_idx=map_dict,
             category_list=EPHOIE_CLASS_LIST,
@@ -371,7 +388,7 @@ def train(args):
         if F1 > top_F1:
             top_F1 = F1
 
-        if F1 > top_F1_tresh or (epoch % 400 == 0 and epoch != start_epoch):
+        if F1 > top_F1_tresh or (epoch % 10 == 0 and epoch != start_epoch):
             top_F1_tresh = F1
             if save_top is not None:
                 if not os.path.exists(save_top) and is_main_process():

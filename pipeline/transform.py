@@ -259,10 +259,7 @@ class GeneralizedViBERTgridTransform(nn.Module):
 
         # 创建shape为batch_shape且值全部为0的tensor
         batched_imgs = images[0].new_full(batch_image_shape, 0)
-        for (
-            img,
-            pad_img,
-        ) in zip(
+        for (img, pad_img,) in zip(
             images,
             batched_imgs,
         ):

@@ -6,7 +6,7 @@ from seqeval.metrics import (
     classification_report,
 )
 
-from typing import Dict
+from typing import Dict, List, Tuple
 
 
 @torch.no_grad()
@@ -22,12 +22,16 @@ def token_classification_criteria(gt_label: torch.Tensor, pred_label: torch.Tens
 
 
 @torch.no_grad()
-def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: Dict, average: str = "micro"):
+def BIO_F1_criteria(
+    pred_gt_list: List[Tuple[torch.Tensor, torch.Tensor]],
+    tag_to_idx: Dict,
+    average: str = "micro",
+):
     idx_to_tag = {v: k for k, v in tag_to_idx.items()}
 
     pred_list = list()
     label_list = list()
-    for pred, label in pred_gt_dict.items():
+    for (pred, label) in pred_gt_list:
         if len(pred.shape) != 1 and pred.shape[1] != 1:
             pred = pred.argmax(dim=1)
         if len(pred.shape) != 1:
@@ -49,11 +53,14 @@ def BIO_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor], tag_to_idx: 
 
 
 @torch.no_grad()
-def token_F1_criteria(pred_gt_dict: Dict[torch.Tensor, torch.Tensor]):
-    pred_label: torch.Tensor
-    gt_label: torch.Tensor
-    pred_label = torch.cat(list(pred_gt_dict.keys()), dim=0)
-    gt_label = torch.cat(list(pred_gt_dict.values()), dim=0)
+def token_F1_criteria(pred_gt_list: List[Tuple[torch.Tensor, torch.Tensor]]):
+    pred_label = list()
+    gt_label = list()
+    for item in pred_gt_list:
+        pred_label.append(item[0])
+        gt_label.append(item[1])
+    pred_label = torch.cat(pred_label, dim=0)
+    gt_label = torch.cat(gt_label, dim=0)
 
     num_classes = pred_label.shape[1]
     pred_label = pred_label.int()

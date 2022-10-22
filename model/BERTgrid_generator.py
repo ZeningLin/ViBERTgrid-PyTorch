@@ -180,7 +180,7 @@ class BERTgridGenerator(nn.Module):
                         curr_batch_aggre_embeddings.append(curr_embedding.unsqueeze(0))
 
                 prev_seg_index = curr_seg_index.int().item()
-            
+
             if self.grid_mode == "mean":
                 mean_embeddings /= num_tok
                 curr_batch_aggre_embeddings.append(mean_embeddings.unsqueeze(0))

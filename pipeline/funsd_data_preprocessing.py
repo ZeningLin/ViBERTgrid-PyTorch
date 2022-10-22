@@ -30,7 +30,6 @@ def annotation_parsing_word(dir_annotation: str, dir_save: str):
             top = coors[1]
             right = coors[2]
             bot = coors[3]
-            
 
             curr_row_dict = {
                 "left": [left],
@@ -64,7 +63,7 @@ def annotation_parsing_seg(dir_annotation: str, dir_save: str):
             seg_text = Literal["N/A"]
         if seg_text == "NA":
             seg_text = Literal["NA"]
-        
+
         data_class = seg["label"]
         pos_neg = 2 if data_class == 0 else 1
 

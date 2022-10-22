@@ -81,13 +81,14 @@ class SemanticSegmentationEncoder(nn.Module):
 class SemanticSegmentationBinaryClassifier(nn.Module):
     """binaly classifier used in auxiliary semantic segmentation head
 
-        Parameters
-        ----------
-        in_channels : int
-            number of channels of the input feature
+    Parameters
+    ----------
+    in_channels : int
+        number of channels of the input feature
     """
+
     def __init__(self, in_channels: int) -> None:
-        
+
         super().__init__()
         self.conv1 = nn.Conv2d(in_channels=in_channels, out_channels=1, kernel_size=1)
 

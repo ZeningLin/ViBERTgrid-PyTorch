@@ -610,7 +610,7 @@ class CRFFieldTypeClassification(nn.Module):
             type of classifier, `single` for a single layer perceptron, `multi` for a MLP
         work_mode: str, optional
             work mode of the model, controls the return values, `train`, `eval` or `inference`
-        
+
         """
         super().__init__()
 
