@@ -24,6 +24,7 @@ def reduce_loss(loss, average=True):
 
         return loss
 
+
 def is_dist_avail_and_initialized():
     if not torch.distributed.is_available():
         return False

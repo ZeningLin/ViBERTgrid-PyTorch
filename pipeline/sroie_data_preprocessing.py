@@ -495,7 +495,7 @@ if __name__ == "__main__":
       |___img: images
       |___box: txt files that contain OCR results
       |___key: txt files that contain key info labels
-    
+
     ___test_raw
       |___img: images
       |___box: txt files that contain OCR results

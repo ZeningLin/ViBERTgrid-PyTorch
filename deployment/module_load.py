@@ -9,9 +9,7 @@ from ltp import LTP
 from model.ViBERTgrid_net import ViBERTgridNet
 
 
-def inference_init(
-    dir_config: str = "./deployment/config/network_config.yaml"
-):
+def inference_init(dir_config: str = "./deployment/config/network_config.yaml"):
     with open(dir_config, "r") as c:
         hyp = yaml.load(c, Loader=yaml.FullLoader)
 

@@ -172,7 +172,7 @@ if __name__ == "__main__":
         DEVICE,
         NUM_CLASSES,
         image_bytes=image_bytes,
-        parse_mode=PARSE_MODE
+        parse_mode=PARSE_MODE,
     )
 
     with open(image_dir.replace(".jpg", ".json"), "w") as f:

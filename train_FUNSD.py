@@ -8,7 +8,8 @@ import numpy as np
 import torch
 from transformers import BertTokenizer, RobertaTokenizer
 
-from data.FUNSD_dataset import load_train_dataset_multi_gpu as FUNSD_load_train
+from data.FUNSD_dataset import load_train_dataset_multi_gpu as FUNSD_load_train_multi
+from data.FUNSD_dataset import load_train_dataset as FUNSD_load_train
 from model.ViBERTgrid_net import ViBERTgridNet
 from pipeline.train_val_utils import (
     train_one_epoch,
@@ -118,6 +119,15 @@ def train(args):
     eval_mode = hyp["eval_mode"]
     tag_mode = hyp["tag_mode"]
 
+    assert (
+        eval_mode == "seqeval"
+    ), "For the FUNSD dataset, only the seqeval mode is available"
+
+    if classifier_mode == "crf":
+        assert (
+            eval_mode == "seqeval"
+        ), "When using the crf classifier, only the seqeval metric is available"
+
     if tag_mode == "BIO":
         map_dict = TAG_TO_IDX_BIO
     else:
@@ -133,12 +143,20 @@ def train(args):
     print(f"==> tokenizer {bert_version} loaded")
 
     print(f"==> loading datasets")
-    train_loader, val_loader, train_sampler = FUNSD_load_train(
-        root=data_root,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        tokenizer=tokenizer,
-    )
+    if args.distributed:
+        train_loader, val_loader, train_sampler = FUNSD_load_train(
+            root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            tokenizer=tokenizer,
+        )
+    else:
+        train_loader, val_loader = FUNSD_load_train(
+            root=data_root,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            tokenizer=tokenizer,
+        )
 
     print(f"==> dataset loaded")
 
@@ -184,7 +202,8 @@ def train(args):
         model_wo_ddp = model.module
     print(f"==> model created")
 
-    num_training_steps_per_epoch = len(train_loader) // args.world_size
+    # num_training_steps_per_epoch = len(train_loader) // args.world_size
+    num_training_steps_per_epoch = len(train_loader)
 
     params_cnn = []
     params_bert = []
@@ -285,7 +304,7 @@ def train(args):
             f"{curr_time.tm_year:04d}-{curr_time.tm_mon:02d}-{curr_time.tm_mday:02d}"
         )
         curr_time_h += (
-            f"_{curr_time.tm_hour:02d}:{curr_time.tm_min:02d}:{curr_time.tm_sec:02d}"
+            f"_{curr_time.tm_hour:02d}-{curr_time.tm_min:02d}-{curr_time.tm_sec:02d}"
         )
         comment = (
             comment_exp + f"bb-{backbone}_bertv-{bert_version}_bs-{batch_size}"
@@ -309,6 +328,7 @@ def train(args):
         device=device,
         epoch=0,
         logger=logger,
+        distributed=args.distributed,
         eval_mode=eval_mode,
         tag_to_idx=map_dict,
         category_list=FUNSD_CLASS_LIST,

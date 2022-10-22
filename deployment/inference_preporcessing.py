@@ -144,7 +144,7 @@ def generate_batch(
     parse_mode: str = None,
 ):
     image = Image.open(io.BytesIO(image_bytes))
-    image = image.convert('RGB')
+    image = image.convert("RGB")
 
     status_code, return_text_list, return_coor_list = ocr_extraction(
         image_bytes=image_bytes, ocr_url=ocr_url, parse_mode=parse_mode

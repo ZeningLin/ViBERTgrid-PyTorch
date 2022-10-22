@@ -6,6 +6,7 @@ from transformers import BertTokenizer, RobertaTokenizer
 
 from model.ViBERTgrid_net import ViBERTgridNet
 
+
 def train(args):
     with open(args.config_path, "r") as c:
         hyp = yaml.load(c, Loader=yaml.FullLoader)
@@ -59,11 +60,11 @@ def train(args):
         loss_weights=loss_weights,
         loss_control_lambda=loss_control_lambda,
     )
-    
-    with open('model_structure.txt', 'w') as f:
+
+    with open("model_structure.txt", "w") as f:
         for name, module in model.named_parameters():
-            f.write(name + '\n')
-    
+            f.write(name + "\n")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
