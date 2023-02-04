@@ -350,8 +350,6 @@ def train(args):
     for epoch in range(start_epoch, end_epoch):
         if args.distributed:
             train_sampler.set_epoch(epoch)
-        if logger is not None:
-            logger.set_step(epoch * num_training_steps_per_epoch)
 
         print(f"==> training epoch {epoch + 1}/{end_epoch - start_epoch}")
         loss = train_one_epoch(
