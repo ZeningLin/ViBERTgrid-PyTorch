@@ -230,7 +230,7 @@ def train_one_epoch(
                     else:
                         param_group["weight_decay"] = weight_decay_scheduler_cnn[iter_]
         if isinstance(lr_scheduler_bert, np.ndarray):
-            for param_group in optimizer_cnn.param_groups:
+            for param_group in optimizer_bert.param_groups:
                 if lr_scheduler_bert is not None:
                     if iter_ >= len(lr_scheduler_bert):
                         param_group["lr"] = lr_scheduler_bert[-1]
