@@ -127,19 +127,23 @@ class FUNSDDataset(Dataset):
         seg_classes_ = []
         ocr_text_filter = []
         seg_index = 0
+        seg_index_filter = 0
         for text in ocr_text:
             if len(text) == 0 or text.isspace():
+                seg_index += 1
                 continue
             curr_tokens = self.tokenizer.tokenize(text)
             if len(curr_tokens) == 0:
+                seg_index += 1
                 continue
             ocr_text_filter.append(text)
             ocr_coor_.append(ocr_coor[seg_index])
             seg_classes_.append(seg_classes[seg_index])
             for i in range(len(curr_tokens)):
                 ocr_tokens.append(curr_tokens[i])
-                seg_indices.append(seg_index)
+                seg_indices.append(seg_index_filter)
             seg_index += 1
+            seg_index_filter += 1
 
         ocr_corpus = self.tokenizer.convert_tokens_to_ids(ocr_tokens)
 
@@ -155,8 +159,8 @@ class FUNSDDataset(Dataset):
             return (
                 self.transform_img(image),
                 torch.tensor(seg_indices, dtype=torch.int),
-                torch.tensor(seg_classes, dtype=torch.int),
-                torch.tensor(ocr_coor, dtype=torch.long),
+                torch.tensor(seg_classes_, dtype=torch.int),
+                torch.tensor(ocr_coor_, dtype=torch.long),
                 torch.tensor(ocr_corpus, dtype=torch.long),
                 ocr_text_filter,
             )
