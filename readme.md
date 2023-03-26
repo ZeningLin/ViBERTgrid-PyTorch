@@ -31,7 +31,7 @@ The following componets are required for the processed dataset:
 #### 2.1 ICDAR SROIE
 It is worth noting that the labeling of the dataset will strongly affect the final result.
 The original SROIE dataset (https://rrc.cvc.uab.es/?ch=13&com=tasks) only contains
-text label of the key information. Coordinates, however, are necessary for constructing the grid, hence **we re-labeled the dataset to obtain the coordinates**. Unfortunately our re-labelled data cannot be made public for some reasons. But the training weights using the data is available at [here](https://drive.google.com/file/d/1VI5g9wbtc0uihhCmM3g5_g20UFVOGhw6/view?usp=sharing) (96+ entity-level F1)
+text label of the key information. Coordinates, however, are necessary for constructing the grid, hence **we re-labeled the dataset to obtain the coordinates**. Unfortunately our re-labelled data cannot be made public for some reasons. But the weights trained using our relabelled data is available at [here](https://drive.google.com/file/d/1z5yvFlYEZWy7-scRCwL-DFMkg_2ABi-p/view?usp=sharing) (**97+ entity-level F1**).
 
 Here's another method for matching the coordinates through regular expression and cosine similarity, referring to (https://github.com/antoinedelplace/Chargrid). **The matching result is not satisfying and can only achieve an entity-level F1 of around 60**. 
 
