@@ -12,4 +12,4 @@ torchvision==0.14.1
 tqdm==4.64.1
 transformers==4.25.1
 tensorboard==2.11.2
-flask==2.2.2
+flask==2.3.2
